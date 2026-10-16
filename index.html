@@ -133,10 +133,14 @@
         placeholder="Enter friend's Private ID">
 
       <button id="findFriendButton" type="button">
-        Find Friend
-      </button>
+  Find Friend
+</button>
 
-      <p id="friendMessage" role="status"></p>
+<p id="friendMessage" role="status"></p>
+
+<button id="addFriendButton" type="button" hidden>
+  Add Friend
+</button>
 
       <button id="logoutButton" class="secondary" type="button">
         Log Out
@@ -145,6 +149,8 @@
   </main>
 
   <script type="module">
+    
+    
     import { initializeApp }
       from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
 
@@ -156,6 +162,27 @@
       onAuthStateChanged,
       signOut
     } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
+
+    import {
+  getFirestore,
+  doc,
+  setDoc,
+  getDoc,
+  collection,
+  addDoc,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
+    
+    const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+    async function saveUserProfile(user, username) {
+  await setDoc(doc(db, "users", user.uid), {
+    username: username,
+    createdAt: serverTimestamp()
+  }, { merge: true });
+    }
+    
 
     // Apne original Firebase config ki values yahan rakho.
     const firebaseConfig = {
@@ -244,6 +271,8 @@
           displayName: username
         });
 
+        await saveUserProfile(result.user, username);
+        
         showHome(result.user);
       } catch (error) {
         console.error("Signup error:", error);
@@ -278,6 +307,11 @@
           auth, email, password
         );
 
+        await saveUserProfile(
+  result.user,
+  result.user.displayName || "friend"
+);
+        
         showHome(result.user);
       } catch (error) {
         console.error("Login error:", error);
@@ -311,20 +345,79 @@
       }
     });
 
-    document.getElementById("findFriendButton")
-      .addEventListener("click", () => {
-        const friendId =
-          document.getElementById("friendId").value.trim();
+    const friendIdInput = document.getElementById("friendId");
+const findFriendButton = document.getElementById("findFriendButton");
+const addFriendButton = document.getElementById("addFriendButton");
 
-        if (!friendId) {
-          friendMessage.textContent =
-            "Please enter your friend's Private ID.";
-          return;
-        }
+let foundFriend = null;
 
-        friendMessage.textContent =
-          "Friend search is not connected yet. We'll add it next.";
-      });
+findFriendButton.addEventListener("click", async () => {
+  const friendId = friendIdInput.value.trim();
+  foundFriend = null;
+  addFriendButton.hidden = true;
+
+  if (!friendId) {
+    friendMessage.textContent = "Enter your friend's Private ID.";
+    return;
+  }
+
+  if (auth.currentUser && friendId === auth.currentUser.uid) {
+    friendMessage.textContent = "You cannot add yourself!";
+    return;
+  }
+
+  friendMessage.textContent = "Searching...";
+
+  try {
+    const profile = await getDoc(doc(db, "users", friendId));
+
+    if (!profile.exists()) {
+      friendMessage.textContent =
+        "Friend not found. Ask them to log in to ShadowChat first.";
+      return;
+    }
+
+    const data = profile.data();
+
+    foundFriend = {
+      uid: friendId,
+      username: data.username || "ShadowChat user"
+    };
+
+    friendMessage.textContent = "Found: " + foundFriend.username;
+    addFriendButton.hidden = false;
+  } catch (error) {
+    console.error("Friend search error:", error);
+    friendMessage.textContent = "Search failed: " + error.message;
+  }
+});
+
+addFriendButton.addEventListener("click", async () => {
+  const currentUser = auth.currentUser;
+
+  if (!currentUser || !foundFriend) {
+    friendMessage.textContent = "Find a friend first.";
+    return;
+  }
+
+  try {
+    await setDoc(
+      doc(db, "friends", currentUser.uid, "contacts", foundFriend.uid),
+      {
+        friendId: foundFriend.uid,
+        username: foundFriend.username,
+        addedAt: serverTimestamp()
+      }
+    );
+
+    friendMessage.textContent =
+      foundFriend.username + " added as a friend!";
+    addFriendButton.hidden = true;
+  } catch (error) {
+    console.error("Add friend error:", error);
+    friendMessage.textContent = "Could not add friend: " + error.message;
+  }
+});
   </script>
 </body>
 </html>
