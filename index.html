@@ -1,0 +1,330 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShadowChat</title>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #09070f;
+      color: white;
+      font-family: Arial, sans-serif;
+    }
+
+    .app {
+      width: 100%;
+      max-width: 400px;
+      padding: 28px;
+      text-align: center;
+    }
+
+    .logo { font-size: 55px; margin-bottom: 8px; }
+    h1 { color: #bb86fc; margin-bottom: 8px; }
+    .subtitle { color: #aaa2b5; margin-bottom: 32px; }
+
+    input {
+      width: 100%;
+      padding: 15px;
+      margin: 8px 0;
+      border: 1px solid #40334f;
+      border-radius: 12px;
+      background: #17121f;
+      color: white;
+      font-size: 16px;
+      outline: none;
+    }
+
+    input:focus { border-color: #bb86fc; }
+
+    button {
+      width: 100%;
+      padding: 15px;
+      margin-top: 14px;
+      border: none;
+      border-radius: 12px;
+      background: #9b5de5;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:disabled { opacity: 0.6; }
+
+    .secondary {
+      background: #21172d;
+      border: 1px solid #7044a1;
+    }
+
+    #message, #friendMessage {
+      color: #d5baff;
+      margin-top: 18px;
+      overflow-wrap: anywhere;
+    }
+
+    .note {
+      margin-top: 28px;
+      color: #80778b;
+      font-size: 12px;
+    }
+
+    [hidden] { display: none !important; }
+  </style>
+</head>
+
+<body>
+  <main class="app">
+    <div class="logo">👻</div>
+    <h1>ShadowChat</h1>
+    <p class="subtitle">Your identity. Your conversations.</p>
+
+    <form id="loginForm">
+      <input id="username" type="text"
+        placeholder="Choose your username"
+        maxlength="24" required>
+
+      <input id="email" type="email"
+        placeholder="Enter your email" required>
+
+      <input id="password" type="password"
+        placeholder="Create a password"
+        minlength="8" required>
+
+      <button id="signupButton" type="submit">
+        Create Account
+      </button>
+    </form>
+
+    <button class="secondary" id="loginButton" type="button">
+      I already have an account
+    </button>
+
+    <p id="message" role="status"></p>
+
+    <p class="note" id="note">
+      Chat with friends using your unique ID.
+    </p>
+
+    <section id="homeScreen" hidden>
+      <h2>Welcome to ShadowChat 👻</h2>
+      <p>Your Private ID</p>
+
+      <input id="myPrivateId" type="text" readonly
+        aria-label="Your private ID">
+
+      <button id="copyIdButton" type="button">
+        Copy My ID
+      </button>
+
+      <hr style="border-color:#40334f; margin:28px 0">
+
+      <h3>Add a Friend</h3>
+
+      <input id="friendId" type="text"
+        placeholder="Enter friend's Private ID">
+
+      <button id="findFriendButton" type="button">
+        Find Friend
+      </button>
+
+      <p id="friendMessage" role="status"></p>
+
+      <button id="logoutButton" class="secondary" type="button">
+        Log Out
+      </button>
+    </section>
+  </main>
+
+  <script type="module">
+    import { initializeApp }
+      from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
+
+    import {
+      getAuth,
+      createUserWithEmailAndPassword,
+      signInWithEmailAndPassword,
+      updateProfile,
+      onAuthStateChanged,
+      signOut
+    } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
+
+    // Apne original Firebase config ki values yahan rakho.
+    const firebaseConfig = {
+  apiKey: "AIzaSyAw_a17iZm1wpo8rp_-f47xV96FD43HeyM",
+  authDomain: "shadowchat-57872.firebaseapp.com",
+  projectId: "shadowchat-57872",
+  storageBucket: "shadowchat-57872.firebasestorage.app",
+  messagingSenderId: "905071947496",
+  appId: "1:905071947496:web:a71ac0d2891ecf1824e35d"
+};
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+
+    const form = document.getElementById("loginForm");
+    const loginButton = document.getElementById("loginButton");
+    const signupButton = document.getElementById("signupButton");
+    const message = document.getElementById("message");
+    const note = document.getElementById("note");
+
+    const homeScreen = document.getElementById("homeScreen");
+    const myPrivateId = document.getElementById("myPrivateId");
+    const copyIdButton = document.getElementById("copyIdButton");
+    const logoutButton = document.getElementById("logoutButton");
+    const friendMessage = document.getElementById("friendMessage");
+
+    let busy = false;
+
+    function showHome(user) {
+      form.hidden = true;
+      loginButton.hidden = true;
+      note.hidden = true;
+      homeScreen.hidden = false;
+
+      myPrivateId.value = user.uid;
+
+      homeScreen.querySelector("h2").textContent =
+        "Welcome, " + (user.displayName || "friend") + " 👻";
+
+      message.textContent = "";
+    }
+
+    function showLogin() {
+      form.hidden = false;
+      loginButton.hidden = false;
+      note.hidden = false;
+      homeScreen.hidden = true;
+    }
+
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        showHome(user);
+      } else {
+        showLogin();
+      }
+    }, (error) => {
+      message.textContent = "Auth error: " + error.message;
+    });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (busy) return;
+
+      const username =
+        document.getElementById("username").value.trim();
+      const email =
+        document.getElementById("email").value.trim();
+      const password =
+        document.getElementById("password").value;
+
+      if (!username || !email || !password) {
+        message.textContent = "Please fill in every field.";
+        return;
+      }
+
+      busy = true;
+      signupButton.disabled = true;
+      message.textContent = "Creating account...";
+
+      try {
+        const result = await createUserWithEmailAndPassword(
+          auth, email, password
+        );
+
+        await updateProfile(result.user, {
+          displayName: username
+        });
+
+        showHome(result.user);
+      } catch (error) {
+        console.error("Signup error:", error);
+        message.textContent =
+          "Signup failed: " + error.code + " — " + error.message;
+      } finally {
+        busy = false;
+        signupButton.disabled = false;
+      }
+    });
+
+    loginButton.addEventListener("click", async () => {
+      if (busy) return;
+
+      const email =
+        document.getElementById("email").value.trim();
+      const password =
+        document.getElementById("password").value;
+
+      if (!email || !password) {
+        message.textContent =
+          "Enter your email and password to log in.";
+        return;
+      }
+
+      busy = true;
+      loginButton.disabled = true;
+      message.textContent = "Logging in...";
+
+      try {
+        const result = await signInWithEmailAndPassword(
+          auth, email, password
+        );
+
+        showHome(result.user);
+      } catch (error) {
+        console.error("Login error:", error);
+        message.textContent =
+          "Login failed: " + error.code + " — " + error.message;
+      } finally {
+        busy = false;
+        loginButton.disabled = false;
+      }
+    });
+
+    copyIdButton.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(myPrivateId.value);
+        friendMessage.textContent = "Private ID copied!";
+      } catch (error) {
+        myPrivateId.focus();
+        myPrivateId.select();
+        friendMessage.textContent =
+          "Select your ID and copy it manually.";
+      }
+    });
+
+    logoutButton.addEventListener("click", async () => {
+      try {
+        await signOut(auth);
+        friendMessage.textContent = "";
+        message.textContent = "You have logged out.";
+      } catch (error) {
+        message.textContent = "Logout failed: " + error.message;
+      }
+    });
+
+    document.getElementById("findFriendButton")
+      .addEventListener("click", () => {
+        const friendId =
+          document.getElementById("friendId").value.trim();
+
+        if (!friendId) {
+          friendMessage.textContent =
+            "Please enter your friend's Private ID.";
+          return;
+        }
+
+        friendMessage.textContent =
+          "Friend search is not connected yet. We'll add it next.";
+      });
+  </script>
+</body>
+</html>
