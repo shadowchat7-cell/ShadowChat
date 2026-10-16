@@ -1,8 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#100c1d">
   <title>ShadowChat</title>
 
   <style>
@@ -11,432 +13,601 @@
     body {
       margin: 0;
       min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      background: #09070f;
-      color: white;
+      background: #100c1d;
+      color: #f5f1ff;
       font-family: Arial, sans-serif;
     }
 
-    .app {
-      width: 100%;
-      max-width: 400px;
-      padding: 28px;
-      text-align: center;
+    button, input { font: inherit; }
+
+    button {
+      cursor: pointer;
+      border: 0;
+      border-radius: 10px;
+      padding: 12px 15px;
+      color: white;
+      background: #8154ee;
+      font-weight: bold;
     }
 
-    .logo { font-size: 55px; margin-bottom: 8px; }
-    h1 { color: #bb86fc; margin-bottom: 8px; }
-    .subtitle { color: #aaa2b5; margin-bottom: 32px; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
 
     input {
       width: 100%;
-      padding: 15px;
-      margin: 8px 0;
-      border: 1px solid #40334f;
-      border-radius: 12px;
-      background: #17121f;
+      padding: 13px;
+      border: 1px solid #39304f;
+      border-radius: 10px;
+      background: #1b152b;
       color: white;
-      font-size: 16px;
       outline: none;
     }
 
-    input:focus { border-color: #bb86fc; }
+    input:focus { border-color: #9976ff; }
 
-    button {
-      width: 100%;
-      padding: 15px;
-      margin-top: 14px;
-      border: none;
-      border-radius: 12px;
-      background: #9b5de5;
-      color: white;
-      font-size: 16px;
-      font-weight: bold;
-      cursor: pointer;
+    .hidden { display: none !important; }
+
+    .screen {
+      width: min(100%, 520px);
+      min-height: 100vh;
+      margin: auto;
+      padding: 22px 16px;
     }
 
-    button:disabled { opacity: 0.6; }
-
-    .secondary {
-      background: #21172d;
-      border: 1px solid #7044a1;
+    .brand {
+      color: #b9a1ff;
+      font-size: 30px;
+      font-weight: 800;
+      margin: 8px 0;
     }
 
-    #message, #friendMessage {
-      color: #d5baff;
+    .muted { color: #a99fbe; font-size: 14px; }
+    .panel {
+      background: #191326;
+      border: 1px solid #302542;
+      border-radius: 16px;
+      padding: 16px;
       margin-top: 18px;
+    }
+
+    .stack { display: grid; gap: 12px; }
+    .row { display: flex; align-items: center; gap: 10px; }
+    .row > input { min-width: 0; }
+    .row > button { flex-shrink: 0; }
+    h2 { font-size: 20px; margin: 0 0 14px; }
+
+    .friend {
+      width: 100%;
+      text-align: left;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-top: 9px;
+      background: #241b36;
+      border: 1px solid #382a50;
+    }
+
+    .friend small { display: block; margin-top: 5px; color: #b5a9ca; font-weight: normal; }
+    .status { min-height: 20px; margin: 10px 0; color: #c6b4ff; font-size: 14px; }
+    .danger { background: #4a2638; }
+    .secondary { background: #302542; }
+
+    #chatScreen { padding-bottom: 14px; }
+    .chatHeader {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #100c1d;
+      padding: 10px 0 14px;
+      border-bottom: 1px solid #302542;
+    }
+
+    #messages {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 18px 0;
+      min-height: 45vh;
+    }
+
+    .bubble {
+      max-width: 84%;
       overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      border-radius: 14px;
+      padding: 11px 13px;
+      background: #292039;
+      align-self: flex-start;
     }
 
-    .note {
-      margin-top: 28px;
-      color: #80778b;
-      font-size: 12px;
+    .bubble.mine {
+      background: #7044d8;
+      align-self: flex-end;
     }
 
-    [hidden] { display: none !important; }
+    .bubble time {
+      display: block;
+      font-size: 11px;
+      opacity: .75;
+      margin-top: 6px;
+    }
+
+    .composer {
+      position: sticky;
+      bottom: 0;
+      background: #100c1d;
+      padding: 10px 0;
+    }
+
+    .composer input { flex: 1; }
+    .hint { font-size: 12px; color: #a99fbe; line-height: 1.5; }
   </style>
 </head>
 
 <body>
-  <main class="app">
-    <div class="logo">👻</div>
-    <h1>ShadowChat</h1>
-    <p class="subtitle">Your identity. Your conversations.</p>
+  <main class="screen">
 
-    <form id="loginForm">
-      <input id="username" type="text"
-        placeholder="Choose your username"
-        maxlength="24" required>
+    <section id="authScreen">
+      <div class="brand">ShadowChat</div>
+      <p class="muted">Your space. Your conversations.</p>
 
-      <input id="email" type="email"
-        placeholder="Enter your email" required>
+      <div class="panel stack">
+        <h2 id="authTitle">Login</h2>
 
-      <input id="password" type="password"
-        placeholder="Create a password"
-        minlength="8" required>
+        <div id="usernameWrap" class="hidden">
+          <input id="username" maxlength="24"
+            placeholder="Choose a username" autocomplete="nickname">
+        </div>
 
-      <button id="signupButton" type="submit">
-        Create Account
-      </button>
-    </form>
+        <input id="email" type="email" placeholder="Email address"
+          autocomplete="email">
+        <input id="password" type="password" placeholder="Password"
+          autocomplete="current-password">
 
-    <button class="secondary" id="loginButton" type="button">
-      I already have an account
-    </button>
+        <button id="authButton">Login</button>
+        <button id="switchAuth" class="secondary">Create account</button>
+        <div id="authStatus" class="status" role="status"></div>
+      </div>
+    </section>
 
-    <p id="message" role="status"></p>
+    <section id="homeScreen" class="hidden">
+      <div class="brand">ShadowChat</div>
+      <p class="muted">Private chats with your friends.</p>
 
-    <p class="note" id="note">
-      Chat with friends using your unique ID.
-    </p>
+      <div class="panel">
+        <h2>Your account</h2>
+        <div class="muted">Your ShadowChat ID</div>
+        <p id="myId" style="overflow-wrap:anywhere"></p>
+        <div class="row">
+          <button id="copyId">Copy My ID</button>
+          <button id="logout" class="danger">Logout</button>
+        </div>
+      </div>
 
-    <section id="homeScreen" hidden>
-      <h2>Welcome to ShadowChat 👻</h2>
-      <p>Your Private ID</p>
+      <div class="panel">
+        <h2>Add a friend</h2>
+        <p class="hint">Friend ka exact ShadowChat ID yahan paste karo.</p>
+        <div class="stack">
+          <input id="friendIdInput" placeholder="Friend's user ID"
+            autocomplete="off">
+          <button id="addFriend">Add Friend</button>
+        </div>
+        <div id="friendStatus" class="status" role="status"></div>
+      </div>
 
-      <input id="myPrivateId" type="text" readonly
-        aria-label="Your private ID">
+      <div class="panel">
+        <h2>Your friends</h2>
+        <p id="friendsEmpty" class="muted">Loading friends...</p>
+        <div id="friendsList"></div>
+      </div>
+    </section>
 
-      <button id="copyIdButton" type="button">
-        Copy My ID
-      </button>
+    <section id="chatScreen" class="hidden">
+      <div class="chatHeader">
+        <div class="row">
+          <button id="backButton" class="secondary">← Back</button>
+          <div style="min-width:0">
+            <strong id="chatFriendName">Chat</strong>
+            <div class="muted">Private conversation</div>
+          </div>
+        </div>
+      </div>
 
-      <hr style="border-color:#40334f; margin:28px 0">
+      <div id="chatStatus" class="status" role="status"></div>
+      <div id="messages" aria-live="polite"></div>
 
-      <h3>Add a Friend</h3>
-
-      <input id="friendId" type="text"
-        placeholder="Enter friend's Private ID"
-        autocomplete="off">
-
-      <button id="findFriendButton" type="button">
-        Find Friend
-      </button>
-
-      <p id="friendMessage" role="status"></p>
-
-      <button id="addFriendButton" type="button" hidden>
-        Add Friend
-      </button>
-
-      <button id="logoutButton" class="secondary" type="button">
-        Log Out
-      </button>
+      <form id="messageForm" class="composer row">
+        <input id="messageInput" maxlength="2000"
+          placeholder="Write a message..." autocomplete="off">
+        <button id="sendButton" type="submit">Send</button>
+      </form>
+      <p class="hint">Messages are visible to the two members of this chat.</p>
     </section>
   </main>
 
   <script type="module">
     import { initializeApp }
-      from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
+      from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 
     import {
-      getAuth,
-      createUserWithEmailAndPassword,
-      signInWithEmailAndPassword,
-      updateProfile,
-      onAuthStateChanged,
-      signOut
-    } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
+      getAuth, onAuthStateChanged, createUserWithEmailAndPassword,
+      signInWithEmailAndPassword, signOut
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
     import {
-      getFirestore,
-      doc,
-      setDoc,
-      getDoc,
-      serverTimestamp
-    } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
+      getFirestore, doc, getDoc, setDoc, collection, addDoc,
+      onSnapshot, query, orderBy, serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-    // Apne Firebase project ki existing config
+    // Firebase Console se apna EXISTING config yahan paste karo.
     const firebaseConfig = {
-      apiKey: "AIzaSyAw_a17iZm1wpo8rp_-f47xV96FD43HeyM",
-      authDomain: "shadowchat-57872.firebaseapp.com",
-      projectId: "shadowchat-57872",
-      storageBucket: "shadowchat-57872.firebasestorage.app",
-      messagingSenderId: "905071947496",
-      appId: "1:905071947496:web:a71ac0d2891ecf1824e35d"
-    };
+  apiKey: "AIzaSyAw_a17iZm1wpo8rp_-f47xV96FD43HeyM",
+  authDomain: "shadowchat-57872.firebaseapp.com",
+  projectId: "shadowchat-57872",
+  storageBucket: "shadowchat-57872.firebasestorage.app",
+  messagingSenderId: "905071947496",
+  appId: "1:905071947496:web:a71ac0d2891ecf1824e35d"
+};
 
-    // Firebase ko sirf ek baar initialize karein
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
 
-    const form = document.getElementById("loginForm");
-    const loginButton = document.getElementById("loginButton");
-    const signupButton = document.getElementById("signupButton");
-    const message = document.getElementById("message");
-    const note = document.getElementById("note");
+    const $ = (id) => document.getElementById(id);
 
-    const homeScreen = document.getElementById("homeScreen");
-    const myPrivateId = document.getElementById("myPrivateId");
-    const copyIdButton = document.getElementById("copyIdButton");
-    const logoutButton = document.getElementById("logoutButton");
+    let currentUser = null;
+    let signupMode = false;
+    let selectedFriend = null;
+    let stopFriendsListener = null;
+    let stopMessagesListener = null;
+    let openingChat = false;
 
-    const friendMessage = document.getElementById("friendMessage");
-    const friendIdInput = document.getElementById("friendId");
-    const findFriendButton = document.getElementById("findFriendButton");
-    const addFriendButton = document.getElementById("addFriendButton");
+    function showScreen(screenId) {
+      ["authScreen", "homeScreen", "chatScreen"].forEach(id => {
+        $(id).classList.toggle("hidden", id !== screenId);
+      });
+    }
 
-    let busy = false;
-    let foundFriend = null;
+    function showStatus(id, message, isError = false) {
+      $(id).textContent = message;
+      $(id).style.color = isError ? "#ff9da9" : "#c6b4ff";
+    }
+
+    function errorText(error) {
+      const messages = {
+        "auth/invalid-email": "Email address sahi nahi hai.",
+        "auth/email-already-in-use": "Is email ka account pehle se hai.",
+        "auth/weak-password": "Password kam se kam 6 characters ka rakho.",
+        "auth/invalid-credential": "Email ya password galat hai.",
+        "auth/network-request-failed": "Internet connection check karo.",
+        "permission-denied": "Firestore permission denied. Rules check karo."
+      };
+      return messages[error.code] || error.message || "Kuch galat hua. Dobara try karo.";
+    }
+
+    function stopListeners() {
+      if (stopFriendsListener) stopFriendsListener();
+      if (stopMessagesListener) stopMessagesListener();
+      stopFriendsListener = null;
+      stopMessagesListener = null;
+    }
 
     async function saveUserProfile(user, username) {
-      await setDoc(doc(db, "users", user.uid), {
-        username: username,
-        createdAt: serverTimestamp()
+      const userRef = doc(db, "users", user.uid);
+      const oldProfile = await getDoc(userRef);
+      const oldUsername = oldProfile.exists()
+        ? oldProfile.data().username
+        : "";
+
+      const cleanName = (username || oldUsername || "ShadowUser")
+        .trim().slice(0, 24);
+
+      await setDoc(userRef, {
+        username: cleanName,
+        updatedAt: serverTimestamp(),
+        ...(oldProfile.exists() ? {} : { createdAt: serverTimestamp() })
       }, { merge: true });
+
+      return cleanName;
     }
 
-    function showHome(user) {
-      form.hidden = true;
-      loginButton.hidden = true;
-      note.hidden = true;
-      homeScreen.hidden = false;
-
-      myPrivateId.value = user.uid;
-
-      homeScreen.querySelector("h2").textContent =
-        "Welcome, " + (user.displayName || "friend") + " 👻";
-
-      message.textContent = "";
+    function updateAuthMode() {
+      $("authTitle").textContent = signupMode ? "Create account" : "Login";
+      $("authButton").textContent = signupMode ? "Sign Up" : "Login";
+      $("switchAuth").textContent = signupMode
+        ? "Already have an account? Login"
+        : "Create account";
+      $("usernameWrap").classList.toggle("hidden", !signupMode);
+      $("password").autocomplete = signupMode ? "new-password" : "current-password";
+      showStatus("authStatus", "");
     }
 
-    function showLogin() {
-      form.hidden = false;
-      loginButton.hidden = false;
-      note.hidden = false;
-      homeScreen.hidden = true;
-    }
-
-    onAuthStateChanged(auth, (user) => {
-      if (user) {
-        showHome(user);
-      } else {
-        showLogin();
-      }
-    }, (error) => {
-      message.textContent = "Auth error: " + error.message;
+    $("switchAuth").addEventListener("click", () => {
+      signupMode = !signupMode;
+      updateAuthMode();
     });
 
-    // Sign up
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      if (busy) return;
-
-      const username =
-        document.getElementById("username").value.trim();
-      const email =
-        document.getElementById("email").value.trim();
-      const password =
-        document.getElementById("password").value;
-
-      if (!username || !email || !password) {
-        message.textContent = "Please fill in every field.";
-        return;
-      }
-
-      busy = true;
-      signupButton.disabled = true;
-      message.textContent = "Creating account...";
-
-      try {
-        const result = await createUserWithEmailAndPassword(
-          auth, email, password
-        );
-
-        await updateProfile(result.user, {
-          displayName: username
-        });
-
-        await saveUserProfile(result.user, username);
-        showHome(result.user);
-
-      } catch (error) {
-        console.error("Signup error:", error);
-        message.textContent =
-          "Signup failed: " + error.code + " — " + error.message;
-      } finally {
-        busy = false;
-        signupButton.disabled = false;
-      }
-    });
-
-    // Log in
-    loginButton.addEventListener("click", async () => {
-      if (busy) return;
-
-      const email =
-        document.getElementById("email").value.trim();
-      const password =
-        document.getElementById("password").value;
+    $("authButton").addEventListener("click", async () => {
+      const email = $("email").value.trim();
+      const password = $("password").value;
+      const username = $("username").value.trim();
 
       if (!email || !password) {
-        message.textContent =
-          "Enter your email and password to log in.";
+        showStatus("authStatus", "Email aur password bharo.", true);
         return;
       }
 
-      busy = true;
-      loginButton.disabled = true;
-      message.textContent = "Logging in...";
+      if (signupMode && !username) {
+        showStatus("authStatus", "Username bhi bharo.", true);
+        return;
+      }
+
+      $("authButton").disabled = true;
+      showStatus("authStatus", "Please wait...");
 
       try {
-        const result = await signInWithEmailAndPassword(
-          auth, email, password
-        );
-
-        await saveUserProfile(
-          result.user,
-          result.user.displayName || "friend"
-        );
-
-        showHome(result.user);
-
+        if (signupMode) {
+          const result = await createUserWithEmailAndPassword(
+            auth, email, password
+          );
+          await saveUserProfile(result.user, username);
+        } else {
+          await signInWithEmailAndPassword(auth, email, password);
+        }
       } catch (error) {
-        console.error("Login error:", error);
-        message.textContent =
-          "Login failed: " + error.code + " — " + error.message;
+        showStatus("authStatus", errorText(error), true);
       } finally {
-        busy = false;
-        loginButton.disabled = false;
+        $("authButton").disabled = false;
       }
     });
 
-    // Copy Private ID
-    copyIdButton.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(myPrivateId.value);
-        friendMessage.textContent = "Private ID copied!";
-      } catch (error) {
-        myPrivateId.focus();
-        myPrivateId.select();
-        friendMessage.textContent =
-          "Select your ID and copy it manually.";
-      }
-    });
+    onAuthStateChanged(auth, async (user) => {
+      stopListeners();
+      currentUser = user;
+      selectedFriend = null;
 
-    // Log out
-    logoutButton.addEventListener("click", async () => {
-      try {
-        await signOut(auth);
-        friendMessage.textContent = "";
-        foundFriend = null;
-        addFriendButton.hidden = true;
-        message.textContent = "You have logged out.";
-      } catch (error) {
-        message.textContent = "Logout failed: " + error.message;
-      }
-    });
-
-    // Find friend by Private ID
-    findFriendButton.addEventListener("click", async () => {
-      const friendId = friendIdInput.value.trim();
-
-      foundFriend = null;
-      addFriendButton.hidden = true;
-
-      if (!auth.currentUser) {
-        friendMessage.textContent = "Please log in first.";
+      if (!user) {
+        showScreen("authScreen");
         return;
       }
+
+      try {
+        await saveUserProfile(user);
+        $("myId").textContent = user.uid;
+        $("friendIdInput").value = "";
+        showScreen("homeScreen");
+        listenForFriends();
+      } catch (error) {
+        showScreen("homeScreen");
+        showStatus("friendStatus", errorText(error), true);
+      }
+    });
+
+    $("logout").addEventListener("click", async () => {
+      stopListeners();
+      await signOut(auth);
+    });
+
+    $("copyId").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(currentUser.uid);
+        $("copyId").textContent = "Copied!";
+        setTimeout(() => $("copyId").textContent = "Copy My ID", 1500);
+      } catch {
+        showStatus("friendStatus", "ID ko long-press karke copy karo.");
+      }
+    });
+
+    $("addFriend").addEventListener("click", async () => {
+      if (!currentUser) return;
+
+      const friendId = $("friendIdInput").value.trim();
 
       if (!friendId) {
-        friendMessage.textContent = "Enter your friend's Private ID.";
+        showStatus("friendStatus", "Friend ka ID paste karo.", true);
         return;
       }
 
-      if (friendId === auth.currentUser.uid) {
-        friendMessage.textContent = "You cannot add yourself!";
+      if (friendId === currentUser.uid) {
+        showStatus("friendStatus", "Apne aap ko add nahi kar sakte.", true);
         return;
       }
 
-      friendMessage.textContent = "Searching...";
-      findFriendButton.disabled = true;
+      $("addFriend").disabled = true;
+      showStatus("friendStatus", "Friend check ho raha hai...");
 
       try {
-        const profile = await getDoc(doc(db, "users", friendId));
+        const friendRef = doc(db, "users", friendId);
+        const friendSnap = await getDoc(friendRef);
 
-        if (!profile.exists()) {
-          friendMessage.textContent =
-            "Friend not found. Ask them to log in to ShadowChat first.";
+        if (!friendSnap.exists()) {
+          showStatus("friendStatus", "Ye ID nahi mili. ID dobara check karo.", true);
           return;
         }
 
-        const data = profile.data();
+        const friendName = friendSnap.data().username || "ShadowUser";
+        const contactRef = doc(
+          db, "friends", currentUser.uid, "contacts", friendId
+        );
 
-        foundFriend = {
-          uid: friendId,
-          username: data.username || "ShadowChat user"
-        };
+        await setDoc(contactRef, {
+          friendId,
+          username: friendName,
+          addedAt: serverTimestamp()
+        });
 
-        friendMessage.textContent = "Found: " + foundFriend.username;
-        addFriendButton.hidden = false;
-
+        $("friendIdInput").value = "";
+        showStatus("friendStatus", friendName + " friend list mein add ho gaya!");
       } catch (error) {
-        console.error("Friend search error:", error);
-        friendMessage.textContent =
-          "Search failed: " + error.code + " — " + error.message;
+        showStatus("friendStatus", errorText(error), true);
       } finally {
-        findFriendButton.disabled = false;
+        $("addFriend").disabled = false;
       }
     });
 
-    // Add friend to the current user's contacts
-    addFriendButton.addEventListener("click", async () => {
-      const currentUser = auth.currentUser;
+    function listenForFriends() {
+      if (stopFriendsListener) stopFriendsListener();
 
-      if (!currentUser || !foundFriend) {
-        friendMessage.textContent = "Find a friend first.";
-        return;
-      }
+      const contactsRef = collection(
+        db, "friends", currentUser.uid, "contacts"
+      );
 
-      addFriendButton.disabled = true;
+      stopFriendsListener = onSnapshot(contactsRef, (snapshot) => {
+        const list = $("friendsList");
+        list.replaceChildren();
+
+        $("friendsEmpty").classList.toggle("hidden", !snapshot.empty);
+
+        if (snapshot.empty) {
+          $("friendsEmpty").textContent =
+            "Abhi koi friend nahi. Upar se friend add karo.";
+          return;
+        }
+
+        snapshot.forEach((contactDoc) => {
+          const contact = contactDoc.data();
+          const friendId = contact.friendId || contactDoc.id;
+          const name = contact.username || "ShadowUser";
+
+          const button = document.createElement("button");
+          button.className = "friend";
+
+          const details = document.createElement("span");
+          details.textContent = name;
+
+          const idText = document.createElement("small");
+          idText.textContent = friendId;
+          details.appendChild(idText);
+
+          const arrow = document.createElement("span");
+          arrow.textContent = "Open chat →";
+
+          button.append(details, arrow);
+          button.addEventListener("click", () => openChat(friendId, name));
+          list.appendChild(button);
+        });
+      }, (error) => {
+        $("friendsEmpty").textContent = errorText(error);
+      });
+    }
+
+    async function openChat(friendId, friendName) {
+      if (!currentUser || openingChat) return;
+      openingChat = true;
+      stopMessagesListener && stopMessagesListener();
+      stopMessagesListener = null;
+
+      selectedFriend = { id: friendId, name: friendName };
+      $("chatFriendName").textContent = friendName;
+      $("messages").replaceChildren();
+      $("messageInput").value = "";
+      showStatus("chatStatus", "Opening private chat...");
+      showScreen("chatScreen");
 
       try {
-        await setDoc(
-          doc(db, "friends", currentUser.uid, "contacts", foundFriend.uid),
+        const members = [currentUser.uid, friendId].sort();
+        const chatId = members.join("_");
+        const chatRef = doc(db, "chats", chatId);
+        const chatSnap = await getDoc(chatRef);
+
+        if (!chatSnap.exists()) {
+          await setDoc(chatRef, {
+            members,
+            createdAt: serverTimestamp()
+          });
+        } else {
+          const existingMembers = chatSnap.data().members || [];
+          if (!existingMembers.includes(currentUser.uid) ||
+              !existingMembers.includes(friendId)) {
+            throw new Error("Chat membership verify nahi ho payi.");
+          }
+        }
+
+        const messagesRef = collection(db, "chats", chatId, "messages");
+        const messagesQuery = query(messagesRef, orderBy("createdAt", "asc"));
+
+        stopMessagesListener = onSnapshot(messagesQuery, (snapshot) => {
+          const container = $("messages");
+          container.replaceChildren();
+
+          if (snapshot.empty) {
+            const empty = document.createElement("p");
+            empty.className = "muted";
+            empty.textContent = "No messages yet. Say hello! 👋";
+            container.appendChild(empty);
+          }
+
+          snapshot.forEach((messageDoc) => {
+            const message = messageDoc.data();
+            const bubble = document.createElement("div");
+            bubble.className = "bubble" +
+              (message.senderId === currentUser.uid ? " mine" : "");
+            bubble.textContent = message.text || "";
+
+            const time = document.createElement("time");
+            const date = message.createdAt?.toDate?.();
+            time.textContent = date
+              ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+              : "Sending...";
+            bubble.appendChild(time);
+            container.appendChild(bubble);
+          });
+
+          container.scrollTop = container.scrollHeight;
+          showStatus("chatStatus", "");
+        }, (error) => {
+          showStatus("chatStatus", errorText(error), true);
+        });
+
+      } catch (error) {
+        showStatus("chatStatus", errorText(error), true);
+      } finally {
+        openingChat = false;
+      }
+    }
+
+    $("messageForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      if (!currentUser || !selectedFriend) return;
+
+      const text = $("messageInput").value.trim();
+      if (!text) return;
+
+      const friendId = selectedFriend.id;
+      const members = [currentUser.uid, friendId].sort();
+      const chatId = members.join("_");
+
+      $("sendButton").disabled = true;
+
+      try {
+        await addDoc(
+          collection(db, "chats", chatId, "messages"),
           {
-            friendId: foundFriend.uid,
-            username: foundFriend.username,
-            addedAt: serverTimestamp()
+            senderId: currentUser.uid,
+            text: text.slice(0, 2000),
+            createdAt: serverTimestamp()
           }
         );
 
-        friendMessage.textContent =
-          foundFriend.username + " added as a friend!";
-        addFriendButton.hidden = true;
-
+        $("messageInput").value = "";
+        $("messageInput").focus();
+        showStatus("chatStatus", "");
       } catch (error) {
-        console.error("Add friend error:", error);
-        friendMessage.textContent =
-          "Could not add friend: " + error.code + " — " + error.message;
+        showStatus("chatStatus", errorText(error), true);
       } finally {
-        addFriendButton.disabled = false;
+        $("sendButton").disabled = false;
       }
     });
+
+    $("backButton").addEventListener("click", () => {
+      if (stopMessagesListener) stopMessagesListener();
+      stopMessagesListener = null;
+      selectedFriend = null;
+      showScreen("homeScreen");
+    });
+
+    updateAuthMode();
   </script>
 </body>
 </html>
