@@ -63,7 +63,7 @@ const firebaseConfig={
 };
 const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app);
 // After starting the Termux server and HTTPS tunnel, paste the tunnel URL here (no trailing slash).
-const FILE_API_BASE = "PASTE_HTTPS_TUNNEL_URL_HERE";
+const FILE_API_BASE = "https://magnet-fantasy-longer-secret.trycloudflare.com";
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const $=id=>document.getElementById(id);
 let currentUser=null,signupMode=false,selectedFriend=null,stopFriendsListener=null,stopMessagesListener=null,openingChat=false;
