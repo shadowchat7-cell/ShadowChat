@@ -1,800 +1,94 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#100c1d">
-  <title>ShadowChat 👻</title>
-
-  <style>
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      min-height: 100vh;
-      background: #100c1d;
-      color: #f5f1ff;
-      font-family: Arial, sans-serif;
-    }
-
-    button, input { font: inherit; }
-
-    button {
-      cursor: pointer;
-      border: 0;
-      border-radius: 12px;
-      padding: 13px 16px;
-      color: white;
-      background: #8154ee;
-      font-weight: bold;
-    }
-
-    button:disabled { opacity: .6; }
-
-    input {
-      width: 100%;
-      min-width: 0;
-      padding: 15px;
-      border: 1px solid #39304f;
-      border-radius: 12px;
-      background: #1b152b;
-      color: white;
-      outline: none;
-    }
-
-    input:focus { border-color: #9976ff; }
-    .hidden { display: none !important; }
-
-    .screen {
-      width: min(100%, 560px);
-      min-height: 100vh;
-      margin: auto;
-      padding: 22px 16px;
-    }
-
-    .brand {
-      color: #b99aff;
-      font-size: 34px;
-      font-weight: 800;
-      margin: 10px 0;
-    }
-
-    .muted { color: #afa3c3; font-size: 14px; line-height: 1.5; }
-    .panel {
-      background: #191326;
-      border: 1px solid #302542;
-      border-radius: 18px;
-      padding: 18px;
-      margin-top: 20px;
-    }
-
-    h2 { font-size: 22px; margin: 0 0 14px; }
-    .stack { display: grid; gap: 12px; }
-    .row { display: flex; align-items: center; gap: 10px; }
-    .row > input { flex: 1; }
-    .secondary { background: #302542; }
-    .danger { background: #4a2638; }
-
-    .status {
-      min-height: 20px;
-      margin-top: 12px;
-      color: #c6b4ff;
-      font-size: 14px;
-      overflow-wrap: anywhere;
-    }
-
-    .friend {
-      width: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-top: 10px;
-      padding: 15px;
-      text-align: left;
-      background: #241b36;
-      border: 1px solid #382a50;
-    }
-
-    .friend-name { font-size: 17px; }
-    .friend-id {
-      display: block;
-      color: #b5a9ca;
-      font-size: 12px;
-      font-weight: normal;
-      margin-top: 6px;
-      overflow-wrap: anywhere;
-    }
-
-    #chatScreen { padding-bottom: 12px; }
-
-    .chatHeader {
-      position: sticky;
-      top: 0;
-      z-index: 2;
-      background: #100c1d;
-      padding: 10px 0 14px;
-      border-bottom: 1px solid #302542;
-    }
-
-    #messages {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      padding: 18px 0;
-      min-height: 40vh;
-      overflow-wrap: anywhere;
-    }
-
-    .bubble {
-      max-width: 85%;
-      white-space: pre-wrap;
-      overflow-wrap: anywhere;
-      border-radius: 16px;
-      padding: 12px 14px;
-      background: #292039;
-      align-self: flex-start;
-    }
-
-    .bubble.mine {
-      background: #7044d8;
-      align-self: flex-end;
-    }
-
-    .bubble time {
-      display: block;
-      font-size: 11px;
-      opacity: .75;
-      margin-top: 6px;
-    }
-
-    .composer {
-      position: sticky;
-      bottom: 0;
-      padding: 10px 0;
-      background: #100c1d;
-    }
-
-    .composer input { flex: 1; }
-    .hint { color: #afa3c3; font-size: 12px; line-height: 1.5; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#100c1d">
+<title>ShadowChat 👻</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#100c1d;color:#f5f1ff;font-family:Arial,sans-serif}
+button,input{font:inherit}button{cursor:pointer;border:0;border-radius:12px;padding:12px 15px;color:#fff;background:#8154ee;font-weight:bold}button:disabled{opacity:.55}
+input{width:100%;min-width:0;padding:13px;border:1px solid #39304f;border-radius:12px;background:#1b152b;color:white;outline:none}
+input:focus{border-color:#9976ff}.hidden{display:none!important}.screen{width:min(100%,560px);min-height:100vh;margin:auto;padding:20px 15px}
+.brand{color:#b99aff;font-size:32px;font-weight:800;margin:10px 0}.muted{color:#afa3c3;font-size:14px;line-height:1.5}
+.panel{background:#191326;border:1px solid #302542;border-radius:18px;padding:17px;margin-top:18px}h2{font-size:21px;margin:0 0 13px}.stack{display:grid;gap:11px}.row{display:flex;align-items:center;gap:9px}.row>input{flex:1}.secondary{background:#302542}.danger{background:#4a2638}
+.status{min-height:20px;margin-top:10px;color:#c6b4ff;font-size:14px;overflow-wrap:anywhere}.friend{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:9px;padding:14px;text-align:left;background:#241b36;border:1px solid #382a50}
+.friend-name{font-size:16px}.friend-id{display:block;color:#b5a9ca;font-size:11px;font-weight:normal;margin-top:5px;overflow-wrap:anywhere}
+.chatHeader{position:sticky;top:0;z-index:2;background:#100c1d;padding:8px 0 13px;border-bottom:1px solid #302542}
+#messages{display:flex;flex-direction:column;gap:10px;padding:17px 0;min-height:30vh;overflow-wrap:anywhere}
+.bubble{max-width:86%;white-space:pre-wrap;overflow-wrap:anywhere;border-radius:16px;padding:11px 13px;background:#292039;align-self:flex-start}.bubble.mine{background:#7044d8;align-self:flex-end}
+.bubble time{display:block;font-size:11px;opacity:.75;margin-top:6px}.composer{position:sticky;bottom:0;padding:9px 0;background:#100c1d}.composer input{flex:1}
+.hint{color:#afa3c3;font-size:12px;line-height:1.5}.file-item{padding:11px;margin-top:8px;background:#241b36;border-radius:10px;overflow-wrap:anywhere}
+a{color:#d6c4ff}
+</style>
 </head>
-
 <body>
 <main class="screen">
-
-  <!-- LOGIN / SIGNUP -->
-  <section id="authScreen">
-    <div class="brand">👻 ShadowChat</div>
-    <p class="muted">Your identity. Your conversations.</p>
-
-    <div class="panel stack">
-      <h2 id="authTitle">Login</h2>
-
-      <div id="usernameWrap" class="hidden">
-        <input id="username" maxlength="24"
-          placeholder="Choose a username" autocomplete="nickname">
-      </div>
-
-      <input id="email" type="email" placeholder="Email address"
-        autocomplete="email">
-
-      <input id="password" type="password" placeholder="Password"
-        autocomplete="current-password">
-
-      <button id="authButton">Login</button>
-      <button id="switchAuth" class="secondary">Create account</button>
-
-      <div id="authStatus" class="status" role="status"></div>
-    </div>
-  </section>
-
-  <!-- HOME -->
-  <section id="homeScreen" class="hidden">
-    <div class="brand">ShadowChat 👻</div>
-    <h2 id="welcomeName">Welcome 👻</h2>
-    <p class="muted">Private chats with your friends.</p>
-
-    <div class="panel">
-      <h2>Your account</h2>
-      <p class="muted">Your ShadowChat ID</p>
-      <p id="myId" style="overflow-wrap:anywhere"></p>
-
-      <div class="row" style="flex-wrap:wrap">
-        <button id="copyId">Copy My ID</button>
-        <button id="logout" class="danger">Logout</button>
-      </div>
-    </div>
-
-    <div class="panel">
-      <h2>Add a friend</h2>
-      <p class="muted">Friend ka exact ShadowChat ID paste karo.</p>
-
-      <div class="stack">
-        <input id="friendIdInput" placeholder="Friend's user ID"
-          autocomplete="off">
-        <button id="addFriend">Add Friend</button>
-      </div>
-
-      <div id="friendStatus" class="status" role="status"></div>
-    </div>
-
-    <div class="panel">
-      <h2>Your friends</h2>
-      <p id="friendsEmpty" class="muted">Loading friends...</p>
-      <div id="friendsList"></div>
-    </div>
-  </section>
-
-  <!-- CHAT -->
-  <section id="chatScreen" class="hidden">
-    <div class="chatHeader">
-      <div class="row">
-        <button id="backButton" class="secondary">← Back</button>
-        <div style="min-width:0">
-          <strong id="chatFriendName">Chat</strong>
-          <div class="muted">Private conversation</div>
-        </div>
-      </div>
-    </div>
-
-    <div id="chatStatus" class="status" role="status"></div>
-    <div id="messages" aria-live="polite"></div>
-
-    <form id="messageForm" class="composer row">
-      <input id="messageInput" maxlength="2000"
-        placeholder="Write a message..." autocomplete="off">
-      <button id="sendButton" type="submit">Send</button>
-    </form>
-
-    <p class="hint">
-      Messages are visible to the two members of this chat.
-    </p>
-  </section>
-
+<section id="authScreen">
+<div class="brand">👻 ShadowChat</div><p class="muted">Your identity. Your conversations.</p>
+<div class="panel stack">
+<h2 id="authTitle">Login</h2>
+<div id="usernameWrap" class="hidden"><input id="username" maxlength="24" placeholder="Choose a username" autocomplete="nickname"></div>
+<input id="email" type="email" placeholder="Email address" autocomplete="email">
+<input id="password" type="password" placeholder="Password" autocomplete="current-password">
+<button id="authButton">Login</button><button id="switchAuth" class="secondary">Create account</button>
+<div id="authStatus" class="status" role="status"></div>
+</div></section>
+<section id="homeScreen" class="hidden">
+<div class="brand">ShadowChat 👻</div><h2 id="welcomeName">Welcome 👻</h2><p class="muted">Private chats with your friends.</p>
+<div class="panel"><h2>Your account</h2><p class="muted">Your ShadowChat ID</p><p id="myId" style="overflow-wrap:anywhere"></p><div class="row" style="flex-wrap:wrap"><button id="copyId">Copy My ID</button><button id="logout" class="danger">Logout</button></div></div>
+<div class="panel"><h2>Add a friend</h2><p class="muted">Friend ka exact ShadowChat ID paste karo.</p><div class="stack"><input id="friendIdInput" placeholder="Friend's user ID" autocomplete="off"><button id="addFriend">Add Friend</button></div><div id="friendStatus" class="status" role="status"></div></div>
+<div class="panel"><h2>Your friends</h2><p id="friendsEmpty" class="muted">Loading friends...</p><div id="friendsList"></div></div>
+</section>
+<section id="chatScreen" class="hidden">
+<div class="chatHeader"><div class="row"><button id="backButton" class="secondary">← Back</button><div style="min-width:0"><strong id="chatFriendName">Chat</strong><div class="muted">Private conversation</div></div></div></div>
+<div id="chatStatus" class="status" role="status"></div><div id="messages" aria-live="polite"></div>
+<form id="messageForm" class="composer row"><input id="messageInput" maxlength="2000" placeholder="Write a message..." autocomplete="off"><button id="sendButton" type="submit">Send</button></form>
+<div class="panel"><h2>📎 File sharing</h2><p class="muted">Choose a file from this phone. File sharing will work only after the secure phone-server API is configured.</p>
+<input id="fileInput" type="file"><div class="row" style="margin-top:10px;flex-wrap:wrap"><button id="uploadFile" type="button">Upload / Send File</button><button id="refreshFiles" type="button" class="secondary">Refresh files</button></div>
+<div id="fileStatus" class="status">Server not connected yet.</div><div id="fileList"></div>
+<p class="hint">Files are not uploaded to Firebase by this page. Don't expose the local server publicly until token verification and chat-member permissions are implemented.</p></div>
+<p class="hint">Messages are visible to the two members of this chat.</p>
+</section>
 </main>
-
 <script type="module">
-  import { initializeApp }
-    from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {getAuth,onAuthStateChanged,createUserWithEmailAndPassword,signInWithEmailAndPassword,signOut,getIdToken} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {getFirestore,doc,getDoc,setDoc,collection,addDoc,onSnapshot,query,orderBy,serverTimestamp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-  import {
-    getAuth,
-    onAuthStateChanged,
-    createUserWithEmailAndPassword,
-    signInWithEmailAndPassword,
-    signOut
-  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-
-  import {
-    getFirestore,
-    doc,
-    getDoc,
-    setDoc,
-    collection,
-    addDoc,
-    onSnapshot,
-    query,
-    orderBy,
-    serverTimestamp
-  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-
-
-  // IMPORTANT:
-  // Apne Firebase Console ka actual config yahan paste karo.
-  const firebaseConfig = {
-  apiKey: "AIzaSyAw_a17iZm1wpo8rp_-f47xV96FD43HeyM",
-  authDomain: "shadowchat-57872.firebaseapp.com",
-  projectId: "shadowchat-57872",
-  storageBucket: "shadowchat-57872.firebasestorage.app",
-  messagingSenderId: "905071947496",
-  appId: "1:905071947496:web:a71ac0d2891ecf1824e35d"
+const firebaseConfig={
+ apiKey:"AIzaSyAw_a17iZm1wpo8rp_-f47xV96FD43HeyM",
+ authDomain:"shadowchat-57872.firebaseapp.com",
+ projectId:"shadowchat-57872",
+ storageBucket:"shadowchat-57872.firebasestorage.app",
+ messagingSenderId:"905071947496",
+ appId:"1:905071947496:web:a71ac0d2891ecf1824e35d"
 };
-
-  const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-  const db = getFirestore(app);
-
-  const $ = id => document.getElementById(id);
-
-  let currentUser = null;
-  let signupMode = false;
-  let selectedFriend = null;
-  let stopFriendsListener = null;
-  let stopMessagesListener = null;
-  let openingChat = false;
-
-
-  // SCREEN CONTROL
-  function showScreen(screenId) {
-    ["authScreen", "homeScreen", "chatScreen"].forEach(id => {
-      $(id).classList.toggle("hidden", id !== screenId);
-    });
-  }
-
-  function showStatus(id, message, isError = false) {
-    $(id).textContent = message;
-    $(id).style.color = isError ? "#ff9da9" : "#c6b4ff";
-  }
-
-  function errorText(error) {
-    const messages = {
-      "auth/invalid-email": "Email address sahi nahi hai.",
-      "auth/email-already-in-use": "Is email ka account pehle se hai.",
-      "auth/weak-password": "Password kam se kam 6 characters rakho.",
-      "auth/invalid-credential": "Email ya password galat hai.",
-      "auth/network-request-failed": "Internet connection check karo.",
-      "permission-denied": "Permission denied. Firestore Rules check karo."
-    };
-
-    return messages[error.code] ||
-      error.message ||
-      "Kuch galat hua. Dobara try karo.";
-  }
-
-  function stopListeners() {
-    if (stopFriendsListener) stopFriendsListener();
-    if (stopMessagesListener) stopMessagesListener();
-
-    stopFriendsListener = null;
-    stopMessagesListener = null;
-  }
-
-
-  // USER PROFILE
-  async function saveUserProfile(user, requestedName = "") {
-    const userRef = doc(db, "users", user.uid);
-    const profile = await getDoc(userRef);
-
-    const savedName = profile.exists()
-      ? (profile.data().username || "")
-      : "";
-
-    const name = (
-      requestedName.trim() ||
-      savedName ||
-      user.displayName ||
-      "ShadowUser"
-    ).slice(0, 24);
-
-    const profileData = {
-      username: name,
-      updatedAt: serverTimestamp()
-    };
-
-    if (!profile.exists()) {
-      profileData.createdAt = serverTimestamp();
-    }
-
-    await setDoc(userRef, profileData, { merge: true });
-    return name;
-  }
-
-  // Show the logged-in user's real saved username.
-  async function showWelcomeName(user) {
-    const name = await saveUserProfile(user);
-    $("welcomeName").textContent = "Welcome, " + name + " 👻";
-  }
-
-
-  // LOGIN / SIGNUP
-  function updateAuthMode() {
-    $("authTitle").textContent =
-      signupMode ? "Create account" : "Login";
-
-    $("authButton").textContent =
-      signupMode ? "Sign Up" : "Login";
-
-    $("switchAuth").textContent =
-      signupMode
-        ? "Already have an account? Login"
-        : "Create account";
-
-    $("usernameWrap").classList.toggle("hidden", !signupMode);
-
-    $("password").autocomplete =
-      signupMode ? "new-password" : "current-password";
-
-    showStatus("authStatus", "");
-  }
-
-  $("switchAuth").addEventListener("click", () => {
-    signupMode = !signupMode;
-    updateAuthMode();
-  });
-
-  $("authButton").addEventListener("click", async () => {
-    const email = $("email").value.trim();
-    const password = $("password").value;
-    const username = $("username").value.trim();
-
-    if (!email || !password) {
-      showStatus("authStatus", "Email aur password bharo.", true);
-      return;
-    }
-
-    if (signupMode && !username) {
-      showStatus("authStatus", "Username bhi bharo.", true);
-      return;
-    }
-
-    if (signupMode && username.length > 24) {
-      showStatus("authStatus", "Username 24 characters se chhota rakho.", true);
-      return;
-    }
-
-    $("authButton").disabled = true;
-    showStatus("authStatus", "Please wait...");
-
-    try {
-      if (signupMode) {
-        const result = await createUserWithEmailAndPassword(
-          auth, email, password
-        );
-
-        await saveUserProfile(result.user, username);
-      } else {
-        await signInWithEmailAndPassword(auth, email, password);
-      }
-    } catch (error) {
-      showStatus("authStatus", errorText(error), true);
-    } finally {
-      $("authButton").disabled = false;
-    }
-  });
-
-
-  // AUTH STATE
-  onAuthStateChanged(auth, async user => {
-    stopListeners();
-    currentUser = user;
-    selectedFriend = null;
-
-    if (!user) {
-      showScreen("authScreen");
-      return;
-    }
-
-    showScreen("homeScreen");
-    $("myId").textContent = user.uid;
-    $("friendsList").replaceChildren();
-    $("friendsEmpty").textContent = "Loading friends...";
-
-    try {
-      await showWelcomeName(user);
-
-      // If user changed account while profile was loading, stop here.
-      if (!currentUser || currentUser.uid !== user.uid) return;
-
-      listenForFriends();
-    } catch (error) {
-      showStatus("friendStatus", errorText(error), true);
-    }
-  });
-
-
-  // LOGOUT
-  $("logout").addEventListener("click", async () => {
-    stopListeners();
-    await signOut(auth);
-  });
-
-
-  // COPY ID
-  $("copyId").addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText(currentUser.uid);
-      $("copyId").textContent = "Copied!";
-
-      setTimeout(() => {
-        $("copyId").textContent = "Copy My ID";
-      }, 1500);
-    } catch {
-      showStatus(
-        "friendStatus",
-        "ID ko long-press karke copy karo."
-      );
-    }
-  });
-
-
-  // ADD FRIEND
-  $("addFriend").addEventListener("click", async () => {
-    if (!currentUser) return;
-
-    const friendId = $("friendIdInput").value.trim();
-
-    if (!friendId) {
-      showStatus("friendStatus", "Friend ka ID paste karo.", true);
-      return;
-    }
-
-    if (friendId === currentUser.uid) {
-      showStatus(
-        "friendStatus",
-        "Apne aap ko friend add nahi kar sakte.",
-        true
-      );
-      return;
-    }
-
-    $("addFriend").disabled = true;
-    showStatus("friendStatus", "Friend check ho raha hai...");
-
-    try {
-      const friendRef = doc(db, "users", friendId);
-      const friendSnap = await getDoc(friendRef);
-
-      if (!friendSnap.exists()) {
-        showStatus(
-          "friendStatus",
-          "Ye ID nahi mili. ID dobara check karo.",
-          true
-        );
-        return;
-      }
-
-      const friendName =
-        friendSnap.data().username || "ShadowUser";
-
-      const contactRef = doc(
-        db, "friends", currentUser.uid, "contacts", friendId
-      );
-
-      await setDoc(contactRef, {
-        friendId: friendId,
-        username: friendName,
-        addedAt: serverTimestamp()
-      });
-
-      $("friendIdInput").value = "";
-
-      showStatus(
-        "friendStatus",
-        friendName + " friend list mein add ho gaya!"
-      );
-    } catch (error) {
-      showStatus("friendStatus", errorText(error), true);
-    } finally {
-      $("addFriend").disabled = false;
-    }
-  });
-
-
-  // LIVE FRIENDS LIST
-  function listenForFriends() {
-    if (stopFriendsListener) stopFriendsListener();
-
-    const contactsRef = collection(
-      db, "friends", currentUser.uid, "contacts"
-    );
-
-    stopFriendsListener = onSnapshot(
-      contactsRef,
-      async snapshot => {
-        if (!currentUser) return;
-
-        const list = $("friendsList");
-        list.replaceChildren();
-
-        $("friendsEmpty").classList.toggle(
-          "hidden", !snapshot.empty
-        );
-
-        if (snapshot.empty) {
-          $("friendsEmpty").textContent =
-            "Abhi koi friend nahi. Upar se friend add karo.";
-          return;
-        }
-
-        for (const contactDoc of snapshot.docs) {
-          const contact = contactDoc.data();
-          const friendId = contact.friendId || contactDoc.id;
-
-          // Read current profile so the latest username is shown.
-          let name = contact.username || "ShadowUser";
-
-          try {
-            const profile = await getDoc(
-              doc(db, "users", friendId)
-            );
-
-            if (profile.exists()) {
-              name = profile.data().username || name;
-            }
-          } catch {
-            // Use the saved contact name if profile read fails.
-          }
-
-          if (!currentUser) return;
-
-          const button = document.createElement("button");
-          button.className = "friend";
-
-          const details = document.createElement("span");
-          details.className = "friend-name";
-          details.textContent = name;
-
-          const idText = document.createElement("small");
-          idText.className = "friend-id";
-          idText.textContent = friendId;
-
-          details.appendChild(idText);
-
-          const arrow = document.createElement("span");
-          arrow.textContent = "Open chat →";
-
-          button.append(details, arrow);
-          button.addEventListener(
-            "click",
-            () => openChat(friendId, name)
-          );
-
-          list.appendChild(button);
-        }
-      },
-      error => {
-        showStatus("friendStatus", errorText(error), true);
-        $("friendsEmpty").textContent = "Friends load nahi hue.";
-      }
-    );
-  }
-
-
-  // OPEN PRIVATE CHAT
-  async function openChat(friendId, friendName) {
-    if (!currentUser || openingChat) return;
-
-    openingChat = true;
-
-    if (stopMessagesListener) stopMessagesListener();
-    stopMessagesListener = null;
-
-    selectedFriend = { id: friendId, name: friendName };
-
-    $("chatFriendName").textContent = friendName;
-    $("messages").replaceChildren();
-    $("messageInput").value = "";
-
-    showStatus("chatStatus", "Opening private chat...");
-    showScreen("chatScreen");
-
-    try {
-      const members = [currentUser.uid, friendId].sort();
-      const chatId = members.join("_");
-      const chatRef = doc(db, "chats", chatId);
-      const chatSnap = await getDoc(chatRef);
-
-      if (!currentUser || selectedFriend?.id !== friendId) return;
-
-      if (!chatSnap.exists()) {
-        await setDoc(chatRef, {
-          members: members,
-          createdAt: serverTimestamp()
-        });
-      } else {
-        const existingMembers = chatSnap.data().members || [];
-
-        if (
-          !existingMembers.includes(currentUser.uid) ||
-          !existingMembers.includes(friendId)
-        ) {
-          throw new Error("Chat membership verify nahi ho payi.");
-        }
-      }
-
-      const messagesRef = collection(
-        db, "chats", chatId, "messages"
-      );
-
-      const messagesQuery = query(
-        messagesRef,
-        orderBy("createdAt", "asc")
-      );
-
-      stopMessagesListener = onSnapshot(
-        messagesQuery,
-        snapshot => {
-          if (!currentUser || selectedFriend?.id !== friendId) return;
-
-          const container = $("messages");
-          container.replaceChildren();
-
-          if (snapshot.empty) {
-            const empty = document.createElement("p");
-            empty.className = "muted";
-            empty.textContent = "No messages yet. Say hello! 👋";
-            container.appendChild(empty);
-          }
-
-          snapshot.forEach(messageDoc => {
-            const message = messageDoc.data();
-
-            const bubble = document.createElement("div");
-            bubble.className =
-              "bubble" +
-              (message.senderId === currentUser.uid ? " mine" : "");
-
-            bubble.textContent = message.text || "";
-
-            const time = document.createElement("time");
-            const date = message.createdAt?.toDate?.();
-
-            time.textContent = date
-              ? date.toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit"
-                })
-              : "Sending...";
-
-            bubble.appendChild(time);
-            container.appendChild(bubble);
-          });
-
-          container.scrollTop = container.scrollHeight;
-          showStatus("chatStatus", "");
-        },
-        error => {
-          showStatus("chatStatus", errorText(error), true);
-        }
-      );
-    } catch (error) {
-      showStatus("chatStatus", errorText(error), true);
-    } finally {
-      openingChat = false;
-    }
-  }
-
-
-  // SEND MESSAGE
-  $("messageForm").addEventListener("submit", async event => {
-    event.preventDefault();
-
-    if (!currentUser || !selectedFriend) return;
-
-    const text = $("messageInput").value.trim();
-
-    if (!text) return;
-
-    const friendId = selectedFriend.id;
-    const members = [currentUser.uid, friendId].sort();
-    const chatId = members.join("_");
-
-    $("sendButton").disabled = true;
-
-    try {
-      await addDoc(
-        collection(db, "chats", chatId, "messages"),
-        {
-          senderId: currentUser.uid,
-          text: text.slice(0, 2000),
-          createdAt: serverTimestamp()
-        }
-      );
-
-      $("messageInput").value = "";
-      $("messageInput").focus();
-      showStatus("chatStatus", "");
-    } catch (error) {
-      showStatus("chatStatus", errorText(error), true);
-    } finally {
-      $("sendButton").disabled = false;
-    }
-  });
-
-
-  // BACK TO FRIENDS
-  $("backButton").addEventListener("click", () => {
-    if (stopMessagesListener) stopMessagesListener();
-
-    stopMessagesListener = null;
-    selectedFriend = null;
-
-    showScreen("homeScreen");
-  });
-
-  updateAuthMode();
+const app=initializeApp(firebaseConfig),auth=getAuth(app),db=getFirestore(app);
+const $=id=>document.getElementById(id);
+let currentUser=null,signupMode=false,selectedFriend=null,stopFriendsListener=null,stopMessagesListener=null,openingChat=false;
+function showScreen(id){["authScreen","homeScreen","chatScreen"].forEach(x=>$(x).classList.toggle("hidden",x!==id))}
+function showStatus(id,msg,error=false){$(id).textContent=msg;$(id).style.color=error?"#ff9da9":"#c6b4ff"}
+function errorText(e){const m={"auth/invalid-email":"Email address sahi nahi hai.","auth/email-already-in-use":"Is email ka account pehle se hai.","auth/weak-password":"Password kam se kam 6 characters rakho.","auth/invalid-credential":"Email ya password galat hai.","auth/network-request-failed":"Internet connection check karo.","permission-denied":"Permission denied. Firestore Rules check karo."};return m[e.code]||e.message||"Kuch galat hua. Dobara try karo."}
+function stopListeners(){if(stopFriendsListener)stopFriendsListener();if(stopMessagesListener)stopMessagesListener();stopFriendsListener=stopMessagesListener=null}
+async function saveUserProfile(user,requestedName=""){const ref=doc(db,"users",user.uid),snap=await getDoc(ref);const old=snap.exists()?(snap.data().username||""):"";const name=(requestedName.trim()||old||user.displayName||"ShadowUser").slice(0,24);const data={username:name,updatedAt:serverTimestamp()};if(!snap.exists())data.createdAt=serverTimestamp();await setDoc(ref,data,{merge:true});return name}
+function updateAuthMode(){$("authTitle").textContent=signupMode?"Create account":"Login";$("authButton").textContent=signupMode?"Sign Up":"Login";$("switchAuth").textContent=signupMode?"Already have an account? Login":"Create account";$("usernameWrap").classList.toggle("hidden",!signupMode);$("password").autocomplete=signupMode?"new-password":"current-password";showStatus("authStatus","")}
+$("switchAuth").addEventListener("click",()=>{signupMode=!signupMode;updateAuthMode()});
+$("authButton").addEventListener("click",async()=>{const email=$("email").value.trim(),password=$("password").value,username=$("username").value.trim();if(!email||!password)return showStatus("authStatus","Email aur password bharo.",true);if(signupMode&&!username)return showStatus("authStatus","Username bhi bharo.",true);$("authButton").disabled=true;showStatus("authStatus","Please wait...");try{if(signupMode){const r=await createUserWithEmailAndPassword(auth,email,password);await saveUserProfile(r.user,username)}else await signInWithEmailAndPassword(auth,email,password)}catch(e){showStatus("authStatus",errorText(e),true)}finally{$("authButton").disabled=false}});
+onAuthStateChanged(auth,async user=>{stopListeners();currentUser=user;selectedFriend=null;if(!user){showScreen("authScreen");return}showScreen("homeScreen");$("myId").textContent=user.uid;$("friendsList").replaceChildren();$("friendsEmpty").textContent="Loading friends...";try{const name=await saveUserProfile(user);if(!currentUser||currentUser.uid!==user.uid)return;$("welcomeName").textContent="Welcome, "+name+" 👻";listenForFriends()}catch(e){showStatus("friendStatus",errorText(e),true)}});
+$("logout").addEventListener("click",async()=>{stopListeners();await signOut(auth)});
+$("copyId").addEventListener("click",async()=>{try{await navigator.clipboard.writeText(currentUser.uid);$("copyId").textContent="Copied!";setTimeout(()=>$("copyId").textContent="Copy My ID",1500)}catch{showStatus("friendStatus","ID ko long-press karke copy karo.")}});
+$("addFriend").addEventListener("click",async()=>{if(!currentUser)return;const id=$("friendIdInput").value.trim();if(!id)return showStatus("friendStatus","Friend ka ID paste karo.",true);if(id===currentUser.uid)return showStatus("friendStatus","Apne aap ko friend add nahi kar sakte.",true);$("addFriend").disabled=true;showStatus("friendStatus","Friend check ho raha hai...");try{const snap=await getDoc(doc(db,"users",id));if(!snap.exists())return showStatus("friendStatus","Ye ID nahi mili. ID dobara check karo.",true);const name=snap.data().username||"ShadowUser";await setDoc(doc(db,"friends",currentUser.uid,"contacts",id),{friendId:id,username:name,addedAt:serverTimestamp()});$("friendIdInput").value="";showStatus("friendStatus",name+" friend list mein add ho gaya!")}catch(e){showStatus("friendStatus",errorText(e),true)}finally{$("addFriend").disabled=false}});
+function listenForFriends(){if(stopFriendsListener)stopFriendsListener();stopFriendsListener=onSnapshot(collection(db,"friends",currentUser.uid,"contacts"),async snap=>{if(!currentUser)return;const list=$("friendsList");list.replaceChildren();$("friendsEmpty").classList.toggle("hidden",!snap.empty);if(snap.empty){$("friendsEmpty").textContent="Abhi koi friend nahi. Upar se friend add karo.";return}for(const cd of snap.docs){const c=cd.data(),id=c.friendId||cd.id;let name=c.username||"ShadowUser";try{const p=await getDoc(doc(db,"users",id));if(p.exists())name=p.data().username||name}catch{}if(!currentUser)return;const b=document.createElement("button");b.className="friend";const d=document.createElement("span");d.className="friend-name";d.textContent=name;const small=document.createElement("small");small.className="friend-id";small.textContent=id;d.appendChild(small);const a=document.createElement("span");a.textContent="Open chat →";b.append(d,a);b.addEventListener("click",()=>openChat(id,name));list.appendChild(b)}},e=>showStatus("friendStatus",errorText(e),true))}
+async function openChat(friendId,friendName){if(!currentUser||openingChat)return;openingChat=true;if(stopMessagesListener)stopMessagesListener();stopMessagesListener=null;selectedFriend={id:friendId,name:friendName};$("chatFriendName").textContent=friendName;$("messages").replaceChildren();$("messageInput").value="";$("fileList").replaceChildren();showStatus("chatStatus","Opening private chat...");showStatus("fileStatus","File server API abhi configure nahi hua.");showScreen("chatScreen");try{const members=[currentUser.uid,friendId].sort(),chatId=members.join("_"),ref=doc(db,"chats",chatId),snap=await getDoc(ref);if(!currentUser||selectedFriend?.id!==friendId)return;if(!snap.exists())await setDoc(ref,{members,createdAt:serverTimestamp()});else{const old=snap.data().members||[];if(!old.includes(currentUser.uid)||!old.includes(friendId))throw Error("Chat membership verify nahi ho payi.")}const q=query(collection(db,"chats",chatId,"messages"),orderBy("createdAt","asc"));stopMessagesListener=onSnapshot(q,s=>{if(!currentUser||selectedFriend?.id!==friendId)return;const box=$("messages");box.replaceChildren();if(s.empty){const p=document.createElement("p");p.className="muted";p.textContent="No messages yet. Say hello! 👋";box.appendChild(p)}s.forEach(md=>{const m=md.data(),b=document.createElement("div");b.className="bubble"+(m.senderId===currentUser.uid?" mine":"");b.textContent=m.text||"";const t=document.createElement("time"),date=m.createdAt?.toDate?.();t.textContent=date?date.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"Sending...";b.appendChild(t);box.appendChild(b)});box.scrollTop=box.scrollHeight;showStatus("chatStatus","")},e=>showStatus("chatStatus",errorText(e),true))}catch(e){showStatus("chatStatus",errorText(e),true)}finally{openingChat=false}}
+$("messageForm").addEventListener("submit",async e=>{e.preventDefault();if(!currentUser||!selectedFriend)return;const text=$("messageInput").value.trim();if(!text)return;const id=[currentUser.uid,selectedFriend.id].sort().join("_");$("sendButton").disabled=true;try{await addDoc(collection(db,"chats",id,"messages"),{senderId:currentUser.uid,text:text.slice(0,2000),createdAt:serverTimestamp()});$("messageInput").value="";$("messageInput").focus()}catch(e){showStatus("chatStatus",errorText(e),true)}finally{$("sendButton").disabled=false}});
+$("backButton").addEventListener("click",()=>{if(stopMessagesListener)stopMessagesListener();stopMessagesListener=null;selectedFriend=null;showScreen("homeScreen")});
+
+// These controls intentionally do not send files yet. The server API must first
+// verify Firebase ID tokens and chat membership before accepting any file.
+$("uploadFile").addEventListener("click",()=>{if(!$("fileInput").files.length)return showStatus("fileStatus","Pehle file choose karo.",true);showStatus("fileStatus","File selected hai, lekin secure upload API abhi server.py mein add nahi hui. Abhi public tunnel start mat karo.",true)});
+$("refreshFiles").addEventListener("click",()=>showStatus("fileStatus","File-list API abhi configure nahi hui. Pehle secure server endpoints setup karenge."));
+updateAuthMode();
 </script>
 </body>
 </html>
