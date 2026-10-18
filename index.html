@@ -17,7 +17,7 @@ input:focus{border-color:#9976ff}.hidden{display:none!important}.screen{width:mi
 .chatHeader{position:sticky;top:0;z-index:2;background:#100c1d;padding:8px 0 13px;border-bottom:1px solid #302542}
 #messages{display:flex;flex-direction:column;gap:10px;padding:17px 0;min-height:30vh;overflow-wrap:anywhere}
 .bubble{max-width:86%;white-space:pre-wrap;overflow-wrap:anywhere;border-radius:16px;padding:11px 13px;background:#292039;align-self:flex-start}.bubble.mine{background:#7044d8;align-self:flex-end}
-.bubble time{display:block;font-size:11px;opacity:.75;margin-top:6px}.composer{position:sticky;bottom:0;padding:9px 0;background:#100c1d}.composer input{flex:1}
+.bubble time{display:block;font-size:11px;opacity:.75;margin-top:6px}.composer{position:sticky;bottom:0;padding:9px 0;background:#100c1d}.composer input{flex:1}.attach-btn{padding:12px 13px;background:#302542;font-size:22px;min-width:48px}.file-tools{display:none;margin:0 0 12px;padding:12px;background:#191326;border:1px solid #302542;border-radius:14px}.file-tools.open{display:block}.file-tools .row{flex-wrap:wrap}.file-tools .row button{flex:1}
 .hint{color:#afa3c3;font-size:12px;line-height:1.5}.file-item{padding:11px;margin-top:8px;background:#241b36;border-radius:10px;overflow-wrap:anywhere}
 a{color:#d6c4ff}
 </style>
@@ -43,11 +43,9 @@ a{color:#d6c4ff}
 <section id="chatScreen" class="hidden">
 <div class="chatHeader"><div class="row"><button id="backButton" class="secondary">← Back</button><div style="min-width:0"><strong id="chatFriendName">Chat</strong><div class="muted">Private conversation</div></div></div></div>
 <div id="chatStatus" class="status" role="status"></div><div id="messages" aria-live="polite"></div>
-<form id="messageForm" class="composer row"><input id="messageInput" maxlength="2000" placeholder="Write a message..." autocomplete="off"><button id="sendButton" type="submit">Send</button></form>
-<div class="panel"><h2>📎 File sharing</h2><p class="muted">Choose a file from this phone. File sharing will work only after the secure phone-server API is configured.</p>
-<input id="fileInput" type="file"><div class="row" style="margin-top:10px;flex-wrap:wrap"><button id="uploadFile" type="button">Upload / Send File</button><button id="refreshFiles" type="button" class="secondary">Refresh files</button></div>
-<div id="fileStatus" class="status">Server not connected yet.</div><div id="fileList"></div>
-<p class="hint">Files are not uploaded to Firebase by this page. Don't expose the local server publicly until token verification and chat-member permissions are implemented.</p></div>
+<div id="fileTools" class="file-tools"><strong>📎 Send a file</strong><p id="selectedFileName" class="muted">Choose a file from this phone.</p><div class="row"><button id="uploadFile" type="button">Upload / Send</button><button id="refreshFiles" type="button" class="secondary">Refresh</button></div><div id="fileStatus" class="status">File server API abhi configure nahi hua.</div><div id="fileList"></div><p class="hint">Secure server API abhi connect nahi hai, isliye actual file transfer filhaal kaam nahi karega.</p></div>
+<input id="fileInput" type="file" class="hidden">
+<form id="messageForm" class="composer row"><button id="attachButton" class="attach-btn" type="button" aria-label="Attach file" title="Attach file">📎</button><input id="messageInput" maxlength="2000" placeholder="Write a message..." autocomplete="off"><button id="sendButton" type="submit">Send</button></form>
 <p class="hint">Messages are visible to the two members of this chat.</p>
 </section>
 </main>
@@ -86,7 +84,9 @@ $("backButton").addEventListener("click",()=>{if(stopMessagesListener)stopMessag
 
 // These controls intentionally do not send files yet. The server API must first
 // verify Firebase ID tokens and chat membership before accepting any file.
-$("uploadFile").addEventListener("click",()=>{if(!$("fileInput").files.length)return showStatus("fileStatus","Pehle file choose karo.",true);showStatus("fileStatus","File selected hai, lekin secure upload API abhi server.py mein add nahi hui. Abhi public tunnel start mat karo.",true)});
+$("attachButton").addEventListener("click",()=>{ $("fileTools").classList.toggle("open"); if($("fileTools").classList.contains("open")) $("fileInput").click(); });
+$("fileInput").addEventListener("change",()=>{const f=$("fileInput").files[0];$("selectedFileName").textContent=f?`Selected: ${f.name} (${Math.ceil(f.size/1024)} KB)`:"Choose a file from this phone."; if(f) $("fileTools").classList.add("open");});
+$("uploadFile").addEventListener("click",()=>{if(!$("fileInput").files.length)return showStatus("fileStatus","Pehle 📎 dabakar file choose karo.",true);showStatus("fileStatus","File selected hai, lekin secure upload API abhi server.py mein add nahi hui. Abhi public tunnel start mat karo.",true)});
 $("refreshFiles").addEventListener("click",()=>showStatus("fileStatus","File-list API abhi configure nahi hui. Pehle secure server endpoints setup karenge."));
 updateAuthMode();
 </script>
