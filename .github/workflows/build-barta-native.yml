@@ -1,0 +1,927 @@
+name: Build Barta Native APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Write project files
+        run: |
+          mkdir -p app_src/lib/screens app_src/lib/services app_src/tools
+          cat > app_src/pubspec.yaml <<'BARTA_EOF'
+          name: app
+          description: Barta - native ShadowChat app
+          publish_to: none
+          version: 1.0.0+1
+
+          environment:
+            sdk: ">=3.3.0 <4.0.0"
+
+          dependencies:
+            flutter:
+              sdk: flutter
+            firebase_core: ^3.8.0
+            firebase_auth: ^5.3.4
+            cloud_firestore: ^5.5.1
+            flutter_local_notifications: ^18.0.1
+
+          flutter:
+            uses-material-design: true
+          BARTA_EOF
+          cat > app_src/lib/firebase_options.dart <<'BARTA_EOF'
+          import 'package:firebase_core/firebase_core.dart';
+
+          // Same Firebase project as the ShadowChat website (public client config).
+          const firebaseOptions = FirebaseOptions(
+            apiKey: 'AIzaSyAw_a17iZm1wpo8rp_-f47xV96FD43HeyM',
+            appId: '1:905071947496:web:a71ac0d2891ecf1824e35d',
+            messagingSenderId: '905071947496',
+            projectId: 'shadowchat-57872',
+            authDomain: 'shadowchat-57872.firebaseapp.com',
+            storageBucket: 'shadowchat-57872.firebasestorage.app',
+          );
+          BARTA_EOF
+          cat > app_src/lib/main.dart <<'BARTA_EOF'
+          import 'package:firebase_auth/firebase_auth.dart';
+          import 'package:firebase_core/firebase_core.dart';
+          import 'package:flutter/material.dart';
+
+          import 'firebase_options.dart';
+          import 'screens/auth_screen.dart';
+          import 'screens/home_screen.dart';
+          import 'services/notifier.dart';
+
+          Future<void> main() async {
+            WidgetsFlutterBinding.ensureInitialized();
+            await Firebase.initializeApp(options: firebaseOptions);
+            await Notifier.instance.init();
+            runApp(const BartaApp());
+          }
+
+          class BartaApp extends StatelessWidget {
+            const BartaApp({super.key});
+
+            @override
+            Widget build(BuildContext context) {
+              return MaterialApp(
+                title: 'Barta',
+                debugShowCheckedModeBanner: false,
+                theme: ThemeData(
+                  brightness: Brightness.dark,
+                  useMaterial3: true,
+                  scaffoldBackgroundColor: const Color(0xFF100C1D),
+                  colorScheme: ColorScheme.fromSeed(
+                    seedColor: const Color(0xFF8154EE),
+                    brightness: Brightness.dark,
+                  ),
+                  inputDecorationTheme: InputDecorationTheme(
+                    filled: true,
+                    fillColor: const Color(0xFF1B152B),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF39304F)),
+                    ),
+                  ),
+                ),
+                home: StreamBuilder<User?>(
+                  stream: FirebaseAuth.instance.authStateChanges(),
+                  builder: (context, snap) {
+                    if (snap.connectionState == ConnectionState.waiting) {
+                      return const Scaffold(
+                          body: Center(child: CircularProgressIndicator()));
+                    }
+                    final user = snap.data;
+                    return user == null ? const AuthScreen() : HomeScreen(user: user);
+                  },
+                ),
+              );
+            }
+          }
+          BARTA_EOF
+          cat > app_src/lib/services/data.dart <<'BARTA_EOF'
+          import 'package:cloud_firestore/cloud_firestore.dart';
+          import 'package:firebase_auth/firebase_auth.dart';
+
+          final db = FirebaseFirestore.instance;
+
+          /// Same chat id rule as the website: both uids sorted and joined by "_".
+          String chatIdOf(String a, String b) => ([a, b]..sort()).join('_');
+
+          /// Same behaviour as the website's saveUserProfile (keeps old username).
+          Future<String> saveUserProfile(User user, {String requested = ''}) async {
+            final ref = db.collection('users').doc(user.uid);
+            final snap = await ref.get();
+            final old = (snap.data()?['username'] as String?) ?? '';
+            var name = requested.trim().isNotEmpty
+                ? requested.trim()
+                : (old.isNotEmpty ? old : (user.displayName ?? 'ShadowUser'));
+            if (name.length > 24) name = name.substring(0, 24);
+            final data = <String, dynamic>{
+              'username': name,
+              'updatedAt': FieldValue.serverTimestamp(),
+            };
+            if (!snap.exists) data['createdAt'] = FieldValue.serverTimestamp();
+            await ref.set(data, SetOptions(merge: true));
+            return name;
+          }
+
+          String errorText(Object e) {
+            final code = (e is FirebaseException) ? e.code : '';
+            const map = {
+              'invalid-email': 'Email address is not valid.',
+              'email-already-in-use': 'An account with this email already exists.',
+              'weak-password': 'Password must be at least 6 characters.',
+              'invalid-credential': 'Wrong email or password.',
+              'wrong-password': 'Wrong email or password.',
+              'user-not-found': 'Wrong email or password.',
+              'network-request-failed': 'Check your internet connection.',
+              'permission-denied': 'Permission denied. Check Firestore rules.',
+            };
+            if (map.containsKey(code)) return map[code]!;
+            if (e is FirebaseException && e.message != null) return e.message!;
+            return 'Something went wrong. Please try again.';
+          }
+          BARTA_EOF
+          cat > app_src/lib/services/notifier.dart <<'BARTA_EOF'
+          import 'dart:async';
+
+          import 'package:cloud_firestore/cloud_firestore.dart';
+          import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
+          import 'data.dart';
+
+          /// Shows a notification when a friend sends a message in a chat that is not
+          /// currently open. Works while the app process is alive (foreground or
+          /// background). Notifications after the app is fully closed need FCM + a
+          /// server (see README).
+          class Notifier {
+            Notifier._();
+            static final instance = Notifier._();
+
+            final _plugin = FlutterLocalNotificationsPlugin();
+            String? openChatId;
+            StreamSubscription? _friendsSub;
+            final Map<String, StreamSubscription> _chatSubs = {};
+
+            Future<void> init() async {
+              const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+              await _plugin.initialize(const InitializationSettings(android: android));
+            }
+
+            Future<void> start(String myUid) async {
+              stop();
+              await _plugin
+                  .resolvePlatformSpecificImplementation<
+                      AndroidFlutterLocalNotificationsPlugin>()
+                  ?.requestNotificationsPermission();
+
+              _friendsSub = db
+                  .collection('friends')
+                  .doc(myUid)
+                  .collection('contacts')
+                  .snapshots()
+                  .listen((snap) {
+                final current = <String, String>{};
+                for (final d in snap.docs) {
+                  final data = d.data();
+                  final id = (data['friendId'] as String?) ?? d.id;
+                  current[id] = (data['username'] as String?) ?? 'ShadowUser';
+                }
+                for (final id in _chatSubs.keys.toList()) {
+                  if (!current.containsKey(id)) _chatSubs.remove(id)?.cancel();
+                }
+                current.forEach((id, name) {
+                  if (!_chatSubs.containsKey(id)) _watch(myUid, id, name);
+                });
+              }, onError: (_) {});
+            }
+
+            void _watch(String me, String friendId, String name) {
+              final chatId = chatIdOf(me, friendId);
+              var first = true;
+              _chatSubs[friendId] = db
+                  .collection('chats')
+                  .doc(chatId)
+                  .collection('messages')
+                  .orderBy('createdAt', descending: true)
+                  .limit(1)
+                  .snapshots()
+                  .listen((snap) {
+                if (first) {
+                  first = false;
+                  return;
+                }
+                for (final ch in snap.docChanges) {
+                  if (ch.type != DocumentChangeType.added) continue;
+                  final d = ch.doc.data();
+                  if (d == null || d['senderId'] == me) continue;
+                  if (openChatId == chatId) continue;
+                  _show(name, (d['text'] as String?) ?? '', chatId.hashCode);
+                }
+              }, onError: (_) {});
+            }
+
+            Future<void> _show(String title, String body, int id) {
+              const details = NotificationDetails(
+                android: AndroidNotificationDetails(
+                  'messages',
+                  'Messages',
+                  channelDescription: 'New message alerts',
+                  importance: Importance.high,
+                  priority: Priority.high,
+                ),
+              );
+              return _plugin.show(id, title, body, details);
+            }
+
+            void stop() {
+              _friendsSub?.cancel();
+              _friendsSub = null;
+              for (final s in _chatSubs.values) {
+                s.cancel();
+              }
+              _chatSubs.clear();
+              openChatId = null;
+            }
+          }
+          BARTA_EOF
+          cat > app_src/lib/screens/auth_screen.dart <<'BARTA_EOF'
+          import 'package:firebase_auth/firebase_auth.dart';
+          import 'package:flutter/material.dart';
+
+          import '../services/data.dart';
+
+          class AuthScreen extends StatefulWidget {
+            const AuthScreen({super.key});
+
+            @override
+            State<AuthScreen> createState() => _AuthScreenState();
+          }
+
+          class _AuthScreenState extends State<AuthScreen> {
+            final _email = TextEditingController();
+            final _password = TextEditingController();
+            final _username = TextEditingController();
+            bool _signup = false;
+            bool _busy = false;
+            String _status = '';
+
+            @override
+            void dispose() {
+              _email.dispose();
+              _password.dispose();
+              _username.dispose();
+              super.dispose();
+            }
+
+            Future<void> _submit() async {
+              final email = _email.text.trim();
+              final password = _password.text;
+              final username = _username.text.trim();
+              if (email.isEmpty || password.isEmpty) {
+                setState(() => _status = 'Enter email and password.');
+                return;
+              }
+              if (_signup && username.isEmpty) {
+                setState(() => _status = 'Enter a username too.');
+                return;
+              }
+              setState(() {
+                _busy = true;
+                _status = 'Please wait...';
+              });
+              try {
+                final auth = FirebaseAuth.instance;
+                if (_signup) {
+                  final r = await auth.createUserWithEmailAndPassword(
+                      email: email, password: password);
+                  await saveUserProfile(r.user!, requested: username);
+                } else {
+                  await auth.signInWithEmailAndPassword(email: email, password: password);
+                }
+              } catch (e) {
+                if (mounted) setState(() => _status = errorText(e));
+              } finally {
+                if (mounted) setState(() => _busy = false);
+              }
+            }
+
+            @override
+            Widget build(BuildContext context) {
+              final cs = Theme.of(context).colorScheme;
+              return Scaffold(
+                body: SafeArea(
+                  child: Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(20),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 480),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text('👻 Barta',
+                                style: TextStyle(
+                                    fontSize: 34,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFFB99AFF))),
+                            const SizedBox(height: 6),
+                            const Text('Your identity. Your conversations.',
+                                style: TextStyle(color: Color(0xFFAFA3C3))),
+                            const SizedBox(height: 22),
+                            Text(_signup ? 'Create account' : 'Login',
+                                style: Theme.of(context).textTheme.headlineSmall),
+                            const SizedBox(height: 14),
+                            if (_signup) ...[
+                              TextField(
+                                controller: _username,
+                                maxLength: 24,
+                                decoration:
+                                    const InputDecoration(hintText: 'Choose a username'),
+                              ),
+                              const SizedBox(height: 4),
+                            ],
+                            TextField(
+                              controller: _email,
+                              keyboardType: TextInputType.emailAddress,
+                              autofillHints: const [AutofillHints.email],
+                              decoration:
+                                  const InputDecoration(hintText: 'Email address'),
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _password,
+                              obscureText: true,
+                              onSubmitted: (_) => _busy ? null : _submit(),
+                              decoration: const InputDecoration(hintText: 'Password'),
+                            ),
+                            const SizedBox(height: 16),
+                            FilledButton(
+                              onPressed: _busy ? null : _submit,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                child: Text(_signup ? 'Sign Up' : 'Login'),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton(
+                              onPressed: _busy
+                                  ? null
+                                  : () => setState(() {
+                                        _signup = !_signup;
+                                        _status = '';
+                                      }),
+                              child: Text(_signup
+                                  ? 'Already have an account? Login'
+                                  : 'Create account'),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(_status,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    color: _status.isEmpty || _status == 'Please wait...'
+                                        ? cs.primary
+                                        : const Color(0xFFFF9DA9))),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }
+          }
+          BARTA_EOF
+          cat > app_src/lib/screens/home_screen.dart <<'BARTA_EOF'
+          import 'package:cloud_firestore/cloud_firestore.dart';
+          import 'package:firebase_auth/firebase_auth.dart';
+          import 'package:flutter/material.dart';
+          import 'package:flutter/services.dart';
+
+          import '../services/data.dart';
+          import '../services/notifier.dart';
+          import 'chat_screen.dart';
+
+          class HomeScreen extends StatefulWidget {
+            final User user;
+            const HomeScreen({super.key, required this.user});
+
+            @override
+            State<HomeScreen> createState() => _HomeScreenState();
+          }
+
+          class _HomeScreenState extends State<HomeScreen> {
+            final _friendId = TextEditingController();
+            String _welcome = 'Welcome 👻';
+            String _status = '';
+            bool _statusError = false;
+            bool _adding = false;
+
+            @override
+            void initState() {
+              super.initState();
+              _init();
+            }
+
+            Future<void> _init() async {
+              try {
+                final name = await saveUserProfile(widget.user);
+                if (mounted) setState(() => _welcome = 'Welcome, $name 👻');
+              } catch (e) {
+                _setStatus(errorText(e), true);
+              }
+              Notifier.instance.start(widget.user.uid);
+            }
+
+            @override
+            void dispose() {
+              _friendId.dispose();
+              super.dispose();
+            }
+
+            void _setStatus(String msg, [bool error = false]) {
+              if (!mounted) return;
+              setState(() {
+                _status = msg;
+                _statusError = error;
+              });
+            }
+
+            Future<void> _addFriend() async {
+              final id = _friendId.text.trim();
+              if (id.isEmpty) return _setStatus('Paste your friend\'s ID.', true);
+              if (id == widget.user.uid) {
+                return _setStatus('You cannot add yourself.', true);
+              }
+              setState(() => _adding = true);
+              _setStatus('Checking friend...');
+              try {
+                final snap = await db.collection('users').doc(id).get();
+                if (!snap.exists) {
+                  return _setStatus('ID not found. Check it again.', true);
+                }
+                final name = (snap.data()?['username'] as String?) ?? 'ShadowUser';
+                await db
+                    .collection('friends')
+                    .doc(widget.user.uid)
+                    .collection('contacts')
+                    .doc(id)
+                    .set({
+                  'friendId': id,
+                  'username': name,
+                  'addedAt': FieldValue.serverTimestamp(),
+                });
+                _friendId.clear();
+                _setStatus('$name added to your friends!');
+              } catch (e) {
+                _setStatus(errorText(e), true);
+              } finally {
+                if (mounted) setState(() => _adding = false);
+              }
+            }
+
+            Future<void> _logout() async {
+              Notifier.instance.stop();
+              await FirebaseAuth.instance.signOut();
+            }
+
+            @override
+            Widget build(BuildContext context) {
+              final uid = widget.user.uid;
+              return Scaffold(
+                appBar: AppBar(
+                  title: const Text('Barta 👻'),
+                  backgroundColor: const Color(0xFF100C1D),
+                  actions: [
+                    IconButton(
+                        tooltip: 'Logout',
+                        icon: const Icon(Icons.logout),
+                        onPressed: _logout),
+                  ],
+                ),
+                body: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    Text(_welcome, style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 14),
+                    _panel(
+                      title: 'Your ID',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SelectableText(uid),
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.copy, size: 18),
+                            label: const Text('Copy My ID'),
+                            onPressed: () async {
+                              await Clipboard.setData(ClipboardData(text: uid));
+                              _setStatus('ID copied.');
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    _panel(
+                      title: 'Add a friend',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          TextField(
+                            controller: _friendId,
+                            decoration:
+                                const InputDecoration(hintText: 'Friend\'s user ID'),
+                          ),
+                          const SizedBox(height: 10),
+                          FilledButton(
+                              onPressed: _adding ? null : _addFriend,
+                              child: const Text('Add Friend')),
+                          if (_status.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 10),
+                              child: Text(_status,
+                                  style: TextStyle(
+                                      color: _statusError
+                                          ? const Color(0xFFFF9DA9)
+                                          : const Color(0xFFC6B4FF))),
+                            ),
+                        ],
+                      ),
+                    ),
+                    _panel(
+                      title: 'Your friends',
+                      child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                        stream: db
+                            .collection('friends')
+                            .doc(uid)
+                            .collection('contacts')
+                            .snapshots(),
+                        builder: (context, snap) {
+                          if (snap.hasError) {
+                            return Text(errorText(snap.error!));
+                          }
+                          if (!snap.hasData) return const Text('Loading friends...');
+                          final docs = snap.data!.docs;
+                          if (docs.isEmpty) {
+                            return const Text('No friends yet. Add one above.',
+                                style: TextStyle(color: Color(0xFFAFA3C3)));
+                          }
+                          return Column(
+                            children: [for (final d in docs) _FriendTile(doc: d)],
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            Widget _panel({required String title, required Widget child}) => Card(
+                  color: const Color(0xFF191326),
+                  margin: const EdgeInsets.only(bottom: 14),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(title,
+                            style: const TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 12),
+                        child,
+                      ],
+                    ),
+                  ),
+                );
+          }
+
+          class _FriendTile extends StatelessWidget {
+            final QueryDocumentSnapshot<Map<String, dynamic>> doc;
+            const _FriendTile({required this.doc});
+
+            @override
+            Widget build(BuildContext context) {
+              final data = doc.data();
+              final id = (data['friendId'] as String?) ?? doc.id;
+              final fallback = (data['username'] as String?) ?? 'ShadowUser';
+              return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                stream: db.collection('users').doc(id).snapshots(),
+                builder: (context, snap) {
+                  final name = (snap.data?.data()?['username'] as String?) ?? fallback;
+                  return Card(
+                    color: const Color(0xFF241B36),
+                    child: ListTile(
+                      title: Text(name),
+                      subtitle: Text(id,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11)),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => ChatScreen(friendId: id, friendName: name))),
+                    ),
+                  );
+                },
+              );
+            }
+          }
+          BARTA_EOF
+          cat > app_src/lib/screens/chat_screen.dart <<'BARTA_EOF'
+          import 'package:cloud_firestore/cloud_firestore.dart';
+          import 'package:firebase_auth/firebase_auth.dart';
+          import 'package:flutter/material.dart';
+
+          import '../services/data.dart';
+          import '../services/notifier.dart';
+
+          class ChatScreen extends StatefulWidget {
+            final String friendId;
+            final String friendName;
+            const ChatScreen(
+                {super.key, required this.friendId, required this.friendName});
+
+            @override
+            State<ChatScreen> createState() => _ChatScreenState();
+          }
+
+          class _ChatScreenState extends State<ChatScreen> {
+            final _input = TextEditingController();
+            late final String _me = FirebaseAuth.instance.currentUser!.uid;
+            late final String _chatId = chatIdOf(_me, widget.friendId);
+            bool _ready = false;
+            String? _error;
+            bool _sending = false;
+
+            @override
+            void initState() {
+              super.initState();
+              Notifier.instance.openChatId = _chatId;
+              _open();
+            }
+
+            Future<void> _open() async {
+              try {
+                final ref = db.collection('chats').doc(_chatId);
+                final snap = await ref.get();
+                final members = [_me, widget.friendId]..sort();
+                if (!snap.exists) {
+                  await ref.set({
+                    'members': members,
+                    'createdAt': FieldValue.serverTimestamp(),
+                  });
+                } else {
+                  final old = List<String>.from(snap.data()?['members'] ?? const []);
+                  if (!old.contains(_me) || !old.contains(widget.friendId)) {
+                    throw StateError('Chat membership could not be verified.');
+                  }
+                }
+                if (mounted) setState(() => _ready = true);
+              } catch (e) {
+                if (mounted) {
+                  setState(() => _error = e is StateError ? e.message : errorText(e));
+                }
+              }
+            }
+
+            @override
+            void dispose() {
+              if (Notifier.instance.openChatId == _chatId) {
+                Notifier.instance.openChatId = null;
+              }
+              _input.dispose();
+              super.dispose();
+            }
+
+            Future<void> _send() async {
+              var text = _input.text.trim();
+              if (text.isEmpty) return;
+              if (text.length > 2000) text = text.substring(0, 2000);
+              setState(() => _sending = true);
+              try {
+                await db.collection('chats').doc(_chatId).collection('messages').add({
+                  'senderId': _me,
+                  'text': text,
+                  'createdAt': FieldValue.serverTimestamp(),
+                });
+                _input.clear();
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context)
+                      .showSnackBar(SnackBar(content: Text(errorText(e))));
+                }
+              } finally {
+                if (mounted) setState(() => _sending = false);
+              }
+            }
+
+            @override
+            Widget build(BuildContext context) {
+              return Scaffold(
+                appBar: AppBar(
+                  backgroundColor: const Color(0xFF100C1D),
+                  title: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(widget.friendName, style: const TextStyle(fontSize: 17)),
+                      const Text('Private conversation',
+                          style: TextStyle(fontSize: 12, color: Color(0xFFAFA3C3))),
+                    ],
+                  ),
+                ),
+                body: Column(
+                  children: [
+                    Expanded(child: _body()),
+                    SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _input,
+                                maxLength: 2000,
+                                maxLines: 4,
+                                minLines: 1,
+                                buildCounter: (_,
+                                        {required currentLength,
+                                        required isFocused,
+                                        maxLength}) =>
+                                    null,
+                                decoration:
+                                    const InputDecoration(hintText: 'Write a message...'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton.filled(
+                              onPressed: (_ready && !_sending) ? _send : null,
+                              icon: const Icon(Icons.send),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            Widget _body() {
+              if (_error != null) {
+                return Center(
+                    child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Text(_error!,
+                            style: const TextStyle(color: Color(0xFFFF9DA9)))));
+              }
+              if (!_ready) return const Center(child: CircularProgressIndicator());
+              return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: db
+                    .collection('chats')
+                    .doc(_chatId)
+                    .collection('messages')
+                    .orderBy('createdAt', descending: true)
+                    .snapshots(),
+                builder: (context, snap) {
+                  if (snap.hasError) {
+                    return Center(child: Text(errorText(snap.error!)));
+                  }
+                  if (!snap.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final docs = snap.data!.docs;
+                  if (docs.isEmpty) {
+                    return const Center(
+                        child: Text('No messages yet. Say hello! 👋',
+                            style: TextStyle(color: Color(0xFFAFA3C3))));
+                  }
+                  return ListView.builder(
+                    reverse: true, // newest message at the bottom
+                    padding: const EdgeInsets.all(12),
+                    itemCount: docs.length,
+                    itemBuilder: (context, i) {
+                      final m = docs[i].data();
+                      final mine = m['senderId'] == _me;
+                      final ts = (m['createdAt'] as Timestamp?)?.toDate();
+                      final time = ts == null
+                          ? 'Sending...'
+                          : TimeOfDay.fromDateTime(ts).format(context);
+                      return Align(
+                        alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+                          constraints: BoxConstraints(
+                              maxWidth: MediaQuery.of(context).size.width * 0.82),
+                          decoration: BoxDecoration(
+                            color: mine
+                                ? const Color(0xFF7044D8)
+                                : const Color(0xFF292039),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text((m['text'] as String?) ?? ''),
+                              const SizedBox(height: 5),
+                              Text(time,
+                                  style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              );
+            }
+          }
+          BARTA_EOF
+          cat > app_src/tools/patch_android.py <<'BARTA_EOF'
+          """Patches the freshly generated Flutter android/ folder for Barta.
+
+          - adds INTERNET + POST_NOTIFICATIONS permissions, sets app label "Barta"
+          - sets minSdk 24
+          - enables core library desugaring (needed by flutter_local_notifications)
+          """
+          import pathlib
+          import re
+          import sys
+
+          android = pathlib.Path("android")
+
+          # ---- manifest -------------------------------------------------------------
+          mf = android / "app/src/main/AndroidManifest.xml"
+          t = mf.read_text()
+          add = ""
+          for p in ("INTERNET", "POST_NOTIFICATIONS"):
+              if f"android.permission.{p}" not in t:
+                  add += f'    <uses-permission android:name="android.permission.{p}"/>\n'
+          t = t.replace("<application", add + "    <application", 1)
+          t = re.sub(r'android:label="[^"]*"', 'android:label="Barta"', t, count=1)
+          mf.write_text(t)
+
+          # ---- gradle ---------------------------------------------------------------
+          kts = android / "app/build.gradle.kts"
+          groovy = android / "app/build.gradle"
+          if kts.exists():
+              g, is_kts = kts, True
+          elif groovy.exists():
+              g, is_kts = groovy, False
+          else:
+              sys.exit("No app/build.gradle(.kts) found")
+
+          s = g.read_text()
+          s, n = re.subn(r"minSdk(Version)?\s*=?\s*flutter\.minSdkVersion", "minSdk = 24", s)
+          if n == 0:
+              print("warning: minSdk line not found, leaving as is")
+
+          flag = ("isCoreLibraryDesugaringEnabled = true" if is_kts
+                  else "coreLibraryDesugaringEnabled true")
+          s, n = re.subn(r"(compileOptions\s*\{)", r"\1\n        " + flag, s, count=1)
+          if n == 0:
+              sys.exit("compileOptions block not found; cannot enable desugaring")
+
+          dep = ('coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")'
+                 if is_kts else
+                 "coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'")
+          s += f"\ndependencies {{\n    {dep}\n}}\n"
+          g.write_text(s)
+          print("Patched", mf, "and", g)
+          BARTA_EOF
+
+      - name: Generate Android scaffold (package com.shadowchat.app)
+        run: |
+          flutter create --platforms=android --org com.shadowchat --project-name app "$RUNNER_TEMP/scaffold"
+          cp -r "$RUNNER_TEMP/scaffold/android" app_src/android
+
+      - name: Patch Android project
+        working-directory: app_src
+        run: python3 tools/patch_android.py
+
+      - name: Get packages
+        working-directory: app_src
+        run: flutter pub get
+
+      - name: Build APK
+        working-directory: app_src
+        run: flutter build apk --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Barta-Native-APK
+          path: app_src/build/app/outputs/flutter-apk/app-release.apk
