@@ -413,6 +413,9 @@ jobs:
           import '../services/notifier.dart';
           import 'chat_screen.dart';
 
+          String _initialOf(String s) =>
+              s.isEmpty ? '?' : String.fromCharCode(s.runes.first).toUpperCase();
+
           class HomeScreen extends StatefulWidget {
             final User user;
             const HomeScreen({super.key, required this.user});
@@ -422,11 +425,7 @@ jobs:
           }
 
           class _HomeScreenState extends State<HomeScreen> {
-            final _friendId = TextEditingController();
-            String _welcome = 'Welcome 👻';
-            String _status = '';
-            bool _statusError = false;
-            bool _adding = false;
+            String _name = '';
 
             @override
             void initState() {
@@ -437,63 +436,89 @@ jobs:
             Future<void> _init() async {
               try {
                 final name = await saveUserProfile(widget.user);
-                if (mounted) setState(() => _welcome = 'Welcome, $name 👻');
-              } catch (e) {
-                _setStatus(errorText(e), true);
-              }
+                if (mounted) setState(() => _name = name);
+              } catch (_) {}
               Notifier.instance.start(widget.user.uid);
             }
 
-            @override
-            void dispose() {
-              _friendId.dispose();
-              super.dispose();
-            }
-
-            void _setStatus(String msg, [bool error = false]) {
-              if (!mounted) return;
-              setState(() {
-                _status = msg;
-                _statusError = error;
-              });
-            }
-
-            Future<void> _addFriend() async {
-              final id = _friendId.text.trim();
-              if (id.isEmpty) return _setStatus('Paste your friend\'s ID.', true);
-              if (id == widget.user.uid) {
-                return _setStatus('You cannot add yourself.', true);
-              }
-              setState(() => _adding = true);
-              _setStatus('Checking friend...');
-              try {
-                final snap = await db.collection('users').doc(id).get();
-                if (!snap.exists) {
-                  return _setStatus('ID not found. Check it again.', true);
-                }
-                final name = (snap.data()?['username'] as String?) ?? 'ShadowUser';
-                await db
-                    .collection('friends')
-                    .doc(widget.user.uid)
-                    .collection('contacts')
-                    .doc(id)
-                    .set({
-                  'friendId': id,
-                  'username': name,
-                  'addedAt': FieldValue.serverTimestamp(),
-                });
-                _friendId.clear();
-                _setStatus('$name added to your friends!');
-              } catch (e) {
-                _setStatus(errorText(e), true);
-              } finally {
-                if (mounted) setState(() => _adding = false);
-              }
-            }
+            String get _initial =>
+                _initialOf(_name.isNotEmpty ? _name : (widget.user.email ?? ''));
 
             Future<void> _logout() async {
               Notifier.instance.stop();
               await FirebaseAuth.instance.signOut();
+            }
+
+            void _openProfile() {
+              final uid = widget.user.uid;
+              final messenger = ScaffoldMessenger.of(context);
+              showModalBottomSheet(
+                context: context,
+                backgroundColor: const Color(0xFF191326),
+                builder: (ctx) => SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Center(
+                          child: CircleAvatar(
+                            radius: 32,
+                            backgroundColor: const Color(0xFF7044D8),
+                            child: Text(_initial,
+                                style: const TextStyle(
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white)),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(_name.isEmpty ? 'ShadowUser' : _name,
+                            textAlign: TextAlign.center,
+                            style: Theme.of(ctx).textTheme.titleLarge),
+                        const SizedBox(height: 18),
+                        const Text('Your ID',
+                            style: TextStyle(color: Color(0xFFAFA3C3), fontSize: 13)),
+                        const SizedBox(height: 4),
+                        SelectableText(uid),
+                        const SizedBox(height: 10),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.copy, size: 18),
+                          label: const Text('Copy My ID'),
+                          onPressed: () async {
+                            await Clipboard.setData(ClipboardData(text: uid));
+                            if (ctx.mounted) Navigator.of(ctx).pop();
+                            messenger.showSnackBar(
+                                const SnackBar(content: Text('ID copied')));
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFF4A2638),
+                              foregroundColor: Colors.white),
+                          icon: const Icon(Icons.logout, size: 18),
+                          label: const Text('Log out'),
+                          onPressed: () {
+                            Navigator.of(ctx).pop();
+                            _logout();
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            void _openSearch() {
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: const Color(0xFF191326),
+                builder: (_) => _SearchSheet(myUid: widget.user.uid),
+              );
             }
 
             @override
@@ -501,110 +526,67 @@ jobs:
               final uid = widget.user.uid;
               return Scaffold(
                 appBar: AppBar(
-                  title: const Text('Barta 👻'),
                   backgroundColor: const Color(0xFF100C1D),
+                  titleSpacing: 16,
+                  title: Row(
+                    children: [
+                      const Text('Barta 👻'),
+                      const SizedBox(width: 12),
+                      GestureDetector(
+                        onTap: _openProfile,
+                        child: CircleAvatar(
+                          radius: 17,
+                          backgroundColor: const Color(0xFF7044D8),
+                          child: Text(_initial,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                  fontSize: 16)),
+                        ),
+                      ),
+                    ],
+                  ),
                   actions: [
                     IconButton(
-                        tooltip: 'Logout',
-                        icon: const Icon(Icons.logout),
-                        onPressed: _logout),
+                        tooltip: 'Search friend',
+                        icon: const Icon(Icons.search),
+                        onPressed: _openSearch),
                   ],
                 ),
-                body: ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    Text(_welcome, style: Theme.of(context).textTheme.titleLarge),
-                    const SizedBox(height: 14),
-                    _panel(
-                      title: 'Your ID',
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SelectableText(uid),
-                          const SizedBox(height: 8),
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.copy, size: 18),
-                            label: const Text('Copy My ID'),
-                            onPressed: () async {
-                              await Clipboard.setData(ClipboardData(text: uid));
-                              _setStatus('ID copied.');
-                            },
+                body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: db
+                      .collection('friends')
+                      .doc(uid)
+                      .collection('contacts')
+                      .snapshots(),
+                  builder: (context, snap) {
+                    if (snap.hasError) {
+                      return Center(child: Text(errorText(snap.error!)));
+                    }
+                    if (!snap.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final docs = snap.data!.docs;
+                    if (docs.isEmpty) {
+                      return const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text(
+                            'No chats yet.\nTap the search button above and enter your friend\'s ID.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Color(0xFFAFA3C3)),
                           ),
-                        ],
-                      ),
-                    ),
-                    _panel(
-                      title: 'Add a friend',
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          TextField(
-                            controller: _friendId,
-                            decoration:
-                                const InputDecoration(hintText: 'Friend\'s user ID'),
-                          ),
-                          const SizedBox(height: 10),
-                          FilledButton(
-                              onPressed: _adding ? null : _addFriend,
-                              child: const Text('Add Friend')),
-                          if (_status.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 10),
-                              child: Text(_status,
-                                  style: TextStyle(
-                                      color: _statusError
-                                          ? const Color(0xFFFF9DA9)
-                                          : const Color(0xFFC6B4FF))),
-                            ),
-                        ],
-                      ),
-                    ),
-                    _panel(
-                      title: 'Your friends',
-                      child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                        stream: db
-                            .collection('friends')
-                            .doc(uid)
-                            .collection('contacts')
-                            .snapshots(),
-                        builder: (context, snap) {
-                          if (snap.hasError) {
-                            return Text(errorText(snap.error!));
-                          }
-                          if (!snap.hasData) return const Text('Loading friends...');
-                          final docs = snap.data!.docs;
-                          if (docs.isEmpty) {
-                            return const Text('No friends yet. Add one above.',
-                                style: TextStyle(color: Color(0xFFAFA3C3)));
-                          }
-                          return Column(
-                            children: [for (final d in docs) _FriendTile(doc: d)],
-                          );
-                        },
-                      ),
-                    ),
-                  ],
+                        ),
+                      );
+                    }
+                    return ListView(
+                      padding: const EdgeInsets.all(12),
+                      children: [for (final d in docs) _FriendTile(doc: d)],
+                    );
+                  },
                 ),
               );
             }
-
-            Widget _panel({required String title, required Widget child}) => Card(
-                  color: const Color(0xFF191326),
-                  margin: const EdgeInsets.only(bottom: 14),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(title,
-                            style: const TextStyle(
-                                fontSize: 18, fontWeight: FontWeight.bold)),
-                        const SizedBox(height: 12),
-                        child,
-                      ],
-                    ),
-                  ),
-                );
           }
 
           class _FriendTile extends StatelessWidget {
@@ -623,6 +605,12 @@ jobs:
                   return Card(
                     color: const Color(0xFF241B36),
                     child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: const Color(0xFF7044D8),
+                        child: Text(_initialOf(name),
+                            style: const TextStyle(
+                                color: Colors.white, fontWeight: FontWeight.bold)),
+                      ),
                       title: Text(name),
                       subtitle: Text(id,
                           maxLines: 1,
@@ -634,6 +622,168 @@ jobs:
                     ),
                   );
                 },
+              );
+            }
+          }
+
+          class _SearchSheet extends StatefulWidget {
+            final String myUid;
+            const _SearchSheet({required this.myUid});
+
+            @override
+            State<_SearchSheet> createState() => _SearchSheetState();
+          }
+
+          class _SearchSheetState extends State<_SearchSheet> {
+            final _ctrl = TextEditingController();
+            bool _busy = false;
+            String _status = '';
+            bool _error = false;
+            String? _foundId;
+            String _foundName = '';
+            bool _already = false;
+
+            @override
+            void dispose() {
+              _ctrl.dispose();
+              super.dispose();
+            }
+
+            void _set(String msg, [bool error = false]) {
+              if (!mounted) return;
+              setState(() {
+                _status = msg;
+                _error = error;
+              });
+            }
+
+            Future<void> _search() async {
+              final id = _ctrl.text.trim();
+              setState(() => _foundId = null);
+              if (id.isEmpty) return _set('Paste your friend\'s ID.', true);
+              if (id == widget.myUid) return _set('That is your own ID.', true);
+              setState(() => _busy = true);
+              _set('Searching...');
+              try {
+                final snap = await db.collection('users').doc(id).get();
+                if (!snap.exists) {
+                  _set('ID not found. Check it again.', true);
+                  return;
+                }
+                final contact = await db
+                    .collection('friends')
+                    .doc(widget.myUid)
+                    .collection('contacts')
+                    .doc(id)
+                    .get();
+                if (!mounted) return;
+                setState(() {
+                  _foundId = id;
+                  _foundName = (snap.data()?['username'] as String?) ?? 'ShadowUser';
+                  _already = contact.exists;
+                  _status = '';
+                });
+              } catch (e) {
+                _set(errorText(e), true);
+              } finally {
+                if (mounted) setState(() => _busy = false);
+              }
+            }
+
+            Future<void> _add() async {
+              final id = _foundId;
+              if (id == null) return;
+              final messenger = ScaffoldMessenger.of(context);
+              final navigator = Navigator.of(context);
+              setState(() => _busy = true);
+              try {
+                await db
+                    .collection('friends')
+                    .doc(widget.myUid)
+                    .collection('contacts')
+                    .doc(id)
+                    .set({
+                  'friendId': id,
+                  'username': _foundName,
+                  'addedAt': FieldValue.serverTimestamp(),
+                });
+                navigator.pop();
+                messenger.showSnackBar(
+                    SnackBar(content: Text('$_foundName added to your chats')));
+              } catch (e) {
+                _set(errorText(e), true);
+              } finally {
+                if (mounted) setState(() => _busy = false);
+              }
+            }
+
+            @override
+            Widget build(BuildContext context) {
+              return SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                    20, 20, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+                child: SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text('Find a friend',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _ctrl,
+                              autofocus: true,
+                              onSubmitted: (_) => _busy ? null : _search(),
+                              decoration:
+                                  const InputDecoration(hintText: 'Friend\'s user ID'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton.filled(
+                            tooltip: 'Search',
+                            onPressed: _busy ? null : _search,
+                            icon: const Icon(Icons.search),
+                          ),
+                        ],
+                      ),
+                      if (_status.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 10),
+                          child: Text(_status,
+                              style: TextStyle(
+                                  color: _error
+                                      ? const Color(0xFFFF9DA9)
+                                      : const Color(0xFFC6B4FF))),
+                        ),
+                      if (_foundId != null)
+                        Card(
+                          color: const Color(0xFF241B36),
+                          margin: const EdgeInsets.only(top: 14),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: const Color(0xFF7044D8),
+                              child: Text(_initialOf(_foundName),
+                                  style: const TextStyle(
+                                      color: Colors.white, fontWeight: FontWeight.bold)),
+                            ),
+                            title: Text(_foundName),
+                            subtitle: Text(_foundId!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11)),
+                            trailing: _already
+                                ? const Text('Already added')
+                                : FilledButton(
+                                    onPressed: _busy ? null : _add,
+                                    child: const Text('Add')),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
               );
             }
           }
