@@ -1,4 +1,4 @@
-name: Build Barta Native APK
+name: Build Baarta Native APK
 
 on:
   workflow_dispatch:
@@ -19,1040 +19,230 @@ jobs:
 
       - name: Write project files
         run: |
-          mkdir -p app_src/lib/screens app_src/lib/services app_src/tools
-          cat > app_src/pubspec.yaml <<'BARTA_EOF'
-          name: app
-          description: Barta - native ShadowChat app
-          publish_to: none
-          version: 1.0.0+1
-
-          environment:
-            sdk: ">=3.3.0 <4.0.0"
-
-          dependencies:
-            flutter:
-              sdk: flutter
-            firebase_core: ^3.8.0
-            firebase_auth: ^5.3.4
-            cloud_firestore: ^5.5.1
-            flutter_local_notifications: ^18.0.1
-
-          flutter:
-            uses-material-design: true
-          BARTA_EOF
-          cat > app_src/lib/firebase_options.dart <<'BARTA_EOF'
-          import 'package:firebase_core/firebase_core.dart';
-
-          // Same Firebase project as the ShadowChat website (public client config).
-          const firebaseOptions = FirebaseOptions(
-            apiKey: 'AIzaSyAw_a17iZm1wpo8rp_-f47xV96FD43HeyM',
-            appId: '1:905071947496:web:a71ac0d2891ecf1824e35d',
-            messagingSenderId: '905071947496',
-            projectId: 'shadowchat-57872',
-            authDomain: 'shadowchat-57872.firebaseapp.com',
-            storageBucket: 'shadowchat-57872.firebasestorage.app',
-          );
-          BARTA_EOF
-          cat > app_src/lib/main.dart <<'BARTA_EOF'
-          import 'package:firebase_auth/firebase_auth.dart';
-          import 'package:firebase_core/firebase_core.dart';
-          import 'package:flutter/material.dart';
-
-          import 'firebase_options.dart';
-          import 'screens/auth_screen.dart';
-          import 'screens/home_screen.dart';
-          import 'services/notifier.dart';
-
-          Future<void> main() async {
-            WidgetsFlutterBinding.ensureInitialized();
-            await Firebase.initializeApp(options: firebaseOptions);
-            await Notifier.instance.init();
-            runApp(const BartaApp());
-          }
-
-          class BartaApp extends StatelessWidget {
-            const BartaApp({super.key});
-
-            @override
-            Widget build(BuildContext context) {
-              return MaterialApp(
-                title: 'Barta',
-                debugShowCheckedModeBanner: false,
-                theme: ThemeData(
-                  brightness: Brightness.dark,
-                  useMaterial3: true,
-                  scaffoldBackgroundColor: const Color(0xFF100C1D),
-                  colorScheme: ColorScheme.fromSeed(
-                    seedColor: const Color(0xFF8154EE),
-                    brightness: Brightness.dark,
-                  ),
-                  inputDecorationTheme: InputDecorationTheme(
-                    filled: true,
-                    fillColor: const Color(0xFF1B152B),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF39304F)),
-                    ),
-                  ),
-                ),
-                home: StreamBuilder<User?>(
-                  stream: FirebaseAuth.instance.authStateChanges(),
-                  builder: (context, snap) {
-                    if (snap.connectionState == ConnectionState.waiting) {
-                      return const Scaffold(
-                          body: Center(child: CircularProgressIndicator()));
-                    }
-                    final user = snap.data;
-                    return user == null ? const AuthScreen() : HomeScreen(user: user);
-                  },
-                ),
-              );
-            }
-          }
-          BARTA_EOF
-          cat > app_src/lib/services/data.dart <<'BARTA_EOF'
-          import 'package:cloud_firestore/cloud_firestore.dart';
-          import 'package:firebase_auth/firebase_auth.dart';
-
-          final db = FirebaseFirestore.instance;
-
-          /// Same chat id rule as the website: both uids sorted and joined by "_".
-          String chatIdOf(String a, String b) => ([a, b]..sort()).join('_');
-
-          /// Same behaviour as the website's saveUserProfile (keeps old username).
-          Future<String> saveUserProfile(User user, {String requested = ''}) async {
-            final ref = db.collection('users').doc(user.uid);
-            final snap = await ref.get();
-            final old = (snap.data()?['username'] as String?) ?? '';
-            var name = requested.trim().isNotEmpty
-                ? requested.trim()
-                : (old.isNotEmpty ? old : (user.displayName ?? 'ShadowUser'));
-            if (name.length > 24) name = name.substring(0, 24);
-            final data = <String, dynamic>{
-              'username': name,
-              'updatedAt': FieldValue.serverTimestamp(),
-            };
-            if (!snap.exists) data['createdAt'] = FieldValue.serverTimestamp();
-            await ref.set(data, SetOptions(merge: true));
-            return name;
-          }
-
-          String errorText(Object e) {
-            final code = (e is FirebaseException) ? e.code : '';
-            const map = {
-              'invalid-email': 'Email address is not valid.',
-              'email-already-in-use': 'An account with this email already exists.',
-              'weak-password': 'Password must be at least 6 characters.',
-              'invalid-credential': 'Wrong email or password.',
-              'wrong-password': 'Wrong email or password.',
-              'user-not-found': 'Wrong email or password.',
-              'network-request-failed': 'Check your internet connection.',
-              'permission-denied': 'Permission denied. Check Firestore rules.',
-            };
-            if (map.containsKey(code)) return map[code]!;
-            if (e is FirebaseException && e.message != null) return e.message!;
-            return 'Something went wrong. Please try again.';
-          }
-          BARTA_EOF
-          cat > app_src/lib/services/notifier.dart <<'BARTA_EOF'
-          import 'dart:async';
-
-          import 'package:cloud_firestore/cloud_firestore.dart';
-          import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-
-          import 'data.dart';
-
-          /// Shows a notification when a friend sends a message in a chat that is not
-          /// currently open. Works while the app process is alive (foreground or
-          /// background). Notifications after the app is fully closed need FCM + a
-          /// server (see README).
-          class Notifier {
-            Notifier._();
-            static final instance = Notifier._();
-
-            final _plugin = FlutterLocalNotificationsPlugin();
-            String? openChatId;
-            StreamSubscription? _friendsSub;
-            final Map<String, StreamSubscription> _chatSubs = {};
-
-            Future<void> init() async {
-              const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-              await _plugin.initialize(const InitializationSettings(android: android));
-            }
-
-            Future<void> start(String myUid) async {
-              stop();
-              await _plugin
-                  .resolvePlatformSpecificImplementation<
-                      AndroidFlutterLocalNotificationsPlugin>()
-                  ?.requestNotificationsPermission();
-
-              _friendsSub = db
-                  .collection('friends')
-                  .doc(myUid)
-                  .collection('contacts')
-                  .snapshots()
-                  .listen((snap) {
-                final current = <String, String>{};
-                for (final d in snap.docs) {
-                  final data = d.data();
-                  final id = (data['friendId'] as String?) ?? d.id;
-                  current[id] = (data['username'] as String?) ?? 'ShadowUser';
-                }
-                for (final id in _chatSubs.keys.toList()) {
-                  if (!current.containsKey(id)) _chatSubs.remove(id)?.cancel();
-                }
-                current.forEach((id, name) {
-                  if (!_chatSubs.containsKey(id)) _watch(myUid, id, name);
-                });
-              }, onError: (_) {});
-            }
-
-            void _watch(String me, String friendId, String name) {
-              final chatId = chatIdOf(me, friendId);
-              var first = true;
-              _chatSubs[friendId] = db
-                  .collection('chats')
-                  .doc(chatId)
-                  .collection('messages')
-                  .orderBy('createdAt', descending: true)
-                  .limit(1)
-                  .snapshots()
-                  .listen((snap) {
-                if (first) {
-                  first = false;
-                  return;
-                }
-                for (final ch in snap.docChanges) {
-                  if (ch.type != DocumentChangeType.added) continue;
-                  final d = ch.doc.data();
-                  if (d == null || d['senderId'] == me) continue;
-                  if (openChatId == chatId) continue;
-                  _show(name, (d['text'] as String?) ?? '', chatId.hashCode);
-                }
-              }, onError: (_) {});
-            }
-
-            Future<void> _show(String title, String body, int id) {
-              const details = NotificationDetails(
-                android: AndroidNotificationDetails(
-                  'messages',
-                  'Messages',
-                  channelDescription: 'New message alerts',
-                  importance: Importance.high,
-                  priority: Priority.high,
-                ),
-              );
-              return _plugin.show(id, title, body, details);
-            }
-
-            void stop() {
-              _friendsSub?.cancel();
-              _friendsSub = null;
-              for (final s in _chatSubs.values) {
-                s.cancel();
-              }
-              _chatSubs.clear();
-              openChatId = null;
-            }
-          }
-          BARTA_EOF
-          cat > app_src/lib/screens/auth_screen.dart <<'BARTA_EOF'
-          import 'package:firebase_auth/firebase_auth.dart';
-          import 'package:flutter/material.dart';
-
-          import '../services/data.dart';
-
-          class AuthScreen extends StatefulWidget {
-            const AuthScreen({super.key});
-
-            @override
-            State<AuthScreen> createState() => _AuthScreenState();
-          }
-
-          class _AuthScreenState extends State<AuthScreen> {
-            final _email = TextEditingController();
-            final _password = TextEditingController();
-            final _username = TextEditingController();
-            bool _signup = false;
-            bool _busy = false;
-            String _status = '';
-
-            @override
-            void dispose() {
-              _email.dispose();
-              _password.dispose();
-              _username.dispose();
-              super.dispose();
-            }
-
-            Future<void> _submit() async {
-              final email = _email.text.trim();
-              final password = _password.text;
-              final username = _username.text.trim();
-              if (email.isEmpty || password.isEmpty) {
-                setState(() => _status = 'Enter email and password.');
-                return;
-              }
-              if (_signup && username.isEmpty) {
-                setState(() => _status = 'Enter a username too.');
-                return;
-              }
-              setState(() {
-                _busy = true;
-                _status = 'Please wait...';
-              });
-              try {
-                final auth = FirebaseAuth.instance;
-                if (_signup) {
-                  final r = await auth.createUserWithEmailAndPassword(
-                      email: email, password: password);
-                  await saveUserProfile(r.user!, requested: username);
-                } else {
-                  await auth.signInWithEmailAndPassword(email: email, password: password);
-                }
-              } catch (e) {
-                if (mounted) setState(() => _status = errorText(e));
-              } finally {
-                if (mounted) setState(() => _busy = false);
-              }
-            }
-
-            @override
-            Widget build(BuildContext context) {
-              final cs = Theme.of(context).colorScheme;
-              return Scaffold(
-                body: SafeArea(
-                  child: Center(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.all(20),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 480),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const Text('👻 Barta',
-                                style: TextStyle(
-                                    fontSize: 34,
-                                    fontWeight: FontWeight.w800,
-                                    color: Color(0xFFB99AFF))),
-                            const SizedBox(height: 6),
-                            const Text('Your identity. Your conversations.',
-                                style: TextStyle(color: Color(0xFFAFA3C3))),
-                            const SizedBox(height: 22),
-                            Text(_signup ? 'Create account' : 'Login',
-                                style: Theme.of(context).textTheme.headlineSmall),
-                            const SizedBox(height: 14),
-                            if (_signup) ...[
-                              TextField(
-                                controller: _username,
-                                maxLength: 24,
-                                decoration:
-                                    const InputDecoration(hintText: 'Choose a username'),
-                              ),
-                              const SizedBox(height: 4),
-                            ],
-                            TextField(
-                              controller: _email,
-                              keyboardType: TextInputType.emailAddress,
-                              autofillHints: const [AutofillHints.email],
-                              decoration:
-                                  const InputDecoration(hintText: 'Email address'),
-                            ),
-                            const SizedBox(height: 12),
-                            TextField(
-                              controller: _password,
-                              obscureText: true,
-                              onSubmitted: (_) => _busy ? null : _submit(),
-                              decoration: const InputDecoration(hintText: 'Password'),
-                            ),
-                            const SizedBox(height: 16),
-                            FilledButton(
-                              onPressed: _busy ? null : _submit,
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                child: Text(_signup ? 'Sign Up' : 'Login'),
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            TextButton(
-                              onPressed: _busy
-                                  ? null
-                                  : () => setState(() {
-                                        _signup = !_signup;
-                                        _status = '';
-                                      }),
-                              child: Text(_signup
-                                  ? 'Already have an account? Login'
-                                  : 'Create account'),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(_status,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                    color: _status.isEmpty || _status == 'Please wait...'
-                                        ? cs.primary
-                                        : const Color(0xFFFF9DA9))),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }
-          }
-          BARTA_EOF
-          cat > app_src/lib/screens/home_screen.dart <<'BARTA_EOF'
-          import 'package:cloud_firestore/cloud_firestore.dart';
-          import 'package:firebase_auth/firebase_auth.dart';
-          import 'package:flutter/material.dart';
-          import 'package:flutter/services.dart';
-
-          import '../services/data.dart';
-          import '../services/notifier.dart';
-          import 'chat_screen.dart';
-
-          String _initialOf(String s) =>
-              s.isEmpty ? '?' : String.fromCharCode(s.runes.first).toUpperCase();
-
-          class HomeScreen extends StatefulWidget {
-            final User user;
-            const HomeScreen({super.key, required this.user});
-
-            @override
-            State<HomeScreen> createState() => _HomeScreenState();
-          }
-
-          class _HomeScreenState extends State<HomeScreen> {
-            String _name = '';
-
-            @override
-            void initState() {
-              super.initState();
-              _init();
-            }
-
-            Future<void> _init() async {
-              try {
-                final name = await saveUserProfile(widget.user);
-                if (mounted) setState(() => _name = name);
-              } catch (_) {}
-              Notifier.instance.start(widget.user.uid);
-            }
-
-            String get _initial =>
-                _initialOf(_name.isNotEmpty ? _name : (widget.user.email ?? ''));
-
-            Future<void> _logout() async {
-              Notifier.instance.stop();
-              await FirebaseAuth.instance.signOut();
-            }
-
-            void _openProfile() {
-              final uid = widget.user.uid;
-              final messenger = ScaffoldMessenger.of(context);
-              showModalBottomSheet(
-                context: context,
-                backgroundColor: const Color(0xFF191326),
-                builder: (ctx) => SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Center(
-                          child: CircleAvatar(
-                            radius: 32,
-                            backgroundColor: const Color(0xFF7044D8),
-                            child: Text(_initial,
-                                style: const TextStyle(
-                                    fontSize: 28,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white)),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(_name.isEmpty ? 'ShadowUser' : _name,
-                            textAlign: TextAlign.center,
-                            style: Theme.of(ctx).textTheme.titleLarge),
-                        const SizedBox(height: 18),
-                        const Text('Your ID',
-                            style: TextStyle(color: Color(0xFFAFA3C3), fontSize: 13)),
-                        const SizedBox(height: 4),
-                        SelectableText(uid),
-                        const SizedBox(height: 10),
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.copy, size: 18),
-                          label: const Text('Copy My ID'),
-                          onPressed: () async {
-                            await Clipboard.setData(ClipboardData(text: uid));
-                            if (ctx.mounted) Navigator.of(ctx).pop();
-                            messenger.showSnackBar(
-                                const SnackBar(content: Text('ID copied')));
-                          },
-                        ),
-                        const SizedBox(height: 8),
-                        FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                              backgroundColor: const Color(0xFF4A2638),
-                              foregroundColor: Colors.white),
-                          icon: const Icon(Icons.logout, size: 18),
-                          label: const Text('Log out'),
-                          onPressed: () {
-                            Navigator.of(ctx).pop();
-                            _logout();
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }
-
-            void _openSearch() {
-              showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                backgroundColor: const Color(0xFF191326),
-                builder: (_) => _SearchSheet(myUid: widget.user.uid),
-              );
-            }
-
-            @override
-            Widget build(BuildContext context) {
-              final uid = widget.user.uid;
-              return Scaffold(
-                appBar: AppBar(
-                  backgroundColor: const Color(0xFF100C1D),
-                  titleSpacing: 16,
-                  title: Row(
-                    children: [
-                      const Text('Barta 👻'),
-                      const SizedBox(width: 12),
-                      GestureDetector(
-                        onTap: _openProfile,
-                        child: CircleAvatar(
-                          radius: 17,
-                          backgroundColor: const Color(0xFF7044D8),
-                          child: Text(_initial,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                  fontSize: 16)),
-                        ),
-                      ),
-                    ],
-                  ),
-                  actions: [
-                    IconButton(
-                        tooltip: 'Search friend',
-                        icon: const Icon(Icons.search),
-                        onPressed: _openSearch),
-                  ],
-                ),
-                body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                  stream: db
-                      .collection('friends')
-                      .doc(uid)
-                      .collection('contacts')
-                      .snapshots(),
-                  builder: (context, snap) {
-                    if (snap.hasError) {
-                      return Center(child: Text(errorText(snap.error!)));
-                    }
-                    if (!snap.hasData) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    final docs = snap.data!.docs;
-                    if (docs.isEmpty) {
-                      return const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Text(
-                            'No chats yet.\nTap the search button above and enter your friend\'s ID.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: Color(0xFFAFA3C3)),
-                          ),
-                        ),
-                      );
-                    }
-                    return ListView(
-                      padding: const EdgeInsets.all(12),
-                      children: [for (final d in docs) _FriendTile(doc: d)],
-                    );
-                  },
-                ),
-              );
-            }
-          }
-
-          class _FriendTile extends StatelessWidget {
-            final QueryDocumentSnapshot<Map<String, dynamic>> doc;
-            const _FriendTile({required this.doc});
-
-            @override
-            Widget build(BuildContext context) {
-              final data = doc.data();
-              final id = (data['friendId'] as String?) ?? doc.id;
-              final fallback = (data['username'] as String?) ?? 'ShadowUser';
-              return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                stream: db.collection('users').doc(id).snapshots(),
-                builder: (context, snap) {
-                  final name = (snap.data?.data()?['username'] as String?) ?? fallback;
-                  return Card(
-                    color: const Color(0xFF241B36),
-                    child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: const Color(0xFF7044D8),
-                        child: Text(_initialOf(name),
-                            style: const TextStyle(
-                                color: Colors.white, fontWeight: FontWeight.bold)),
-                      ),
-                      title: Text(name),
-                      subtitle: Text(id,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11)),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => ChatScreen(friendId: id, friendName: name))),
-                    ),
-                  );
-                },
-              );
-            }
-          }
-
-          class _SearchSheet extends StatefulWidget {
-            final String myUid;
-            const _SearchSheet({required this.myUid});
-
-            @override
-            State<_SearchSheet> createState() => _SearchSheetState();
-          }
-
-          class _SearchSheetState extends State<_SearchSheet> {
-            final _ctrl = TextEditingController();
-            bool _busy = false;
-            String _status = '';
-            bool _error = false;
-            String? _foundId;
-            String _foundName = '';
-            bool _already = false;
-
-            @override
-            void dispose() {
-              _ctrl.dispose();
-              super.dispose();
-            }
-
-            void _set(String msg, [bool error = false]) {
-              if (!mounted) return;
-              setState(() {
-                _status = msg;
-                _error = error;
-              });
-            }
-
-            Future<void> _search() async {
-              final id = _ctrl.text.trim();
-              setState(() => _foundId = null);
-              if (id.isEmpty) return _set('Paste your friend\'s ID.', true);
-              if (id == widget.myUid) return _set('That is your own ID.', true);
-              setState(() => _busy = true);
-              _set('Searching...');
-              try {
-                final snap = await db.collection('users').doc(id).get();
-                if (!snap.exists) {
-                  _set('ID not found. Check it again.', true);
-                  return;
-                }
-                final contact = await db
-                    .collection('friends')
-                    .doc(widget.myUid)
-                    .collection('contacts')
-                    .doc(id)
-                    .get();
-                if (!mounted) return;
-                setState(() {
-                  _foundId = id;
-                  _foundName = (snap.data()?['username'] as String?) ?? 'ShadowUser';
-                  _already = contact.exists;
-                  _status = '';
-                });
-              } catch (e) {
-                _set(errorText(e), true);
-              } finally {
-                if (mounted) setState(() => _busy = false);
-              }
-            }
-
-            Future<void> _add() async {
-              final id = _foundId;
-              if (id == null) return;
-              final messenger = ScaffoldMessenger.of(context);
-              final navigator = Navigator.of(context);
-              setState(() => _busy = true);
-              try {
-                await db
-                    .collection('friends')
-                    .doc(widget.myUid)
-                    .collection('contacts')
-                    .doc(id)
-                    .set({
-                  'friendId': id,
-                  'username': _foundName,
-                  'addedAt': FieldValue.serverTimestamp(),
-                });
-                navigator.pop();
-                messenger.showSnackBar(
-                    SnackBar(content: Text('$_foundName added to your chats')));
-              } catch (e) {
-                _set(errorText(e), true);
-              } finally {
-                if (mounted) setState(() => _busy = false);
-              }
-            }
-
-            @override
-            Widget build(BuildContext context) {
-              return SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(
-                    20, 20, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
-                child: SafeArea(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text('Find a friend',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _ctrl,
-                              autofocus: true,
-                              onSubmitted: (_) => _busy ? null : _search(),
-                              decoration:
-                                  const InputDecoration(hintText: 'Friend\'s user ID'),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton.filled(
-                            tooltip: 'Search',
-                            onPressed: _busy ? null : _search,
-                            icon: const Icon(Icons.search),
-                          ),
-                        ],
-                      ),
-                      if (_status.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 10),
-                          child: Text(_status,
-                              style: TextStyle(
-                                  color: _error
-                                      ? const Color(0xFFFF9DA9)
-                                      : const Color(0xFFC6B4FF))),
-                        ),
-                      if (_foundId != null)
-                        Card(
-                          color: const Color(0xFF241B36),
-                          margin: const EdgeInsets.only(top: 14),
-                          child: ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: const Color(0xFF7044D8),
-                              child: Text(_initialOf(_foundName),
-                                  style: const TextStyle(
-                                      color: Colors.white, fontWeight: FontWeight.bold)),
-                            ),
-                            title: Text(_foundName),
-                            subtitle: Text(_foundId!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 11)),
-                            trailing: _already
-                                ? const Text('Already added')
-                                : FilledButton(
-                                    onPressed: _busy ? null : _add,
-                                    child: const Text('Add')),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              );
-            }
-          }
-          BARTA_EOF
-          cat > app_src/lib/screens/chat_screen.dart <<'BARTA_EOF'
-          import 'package:cloud_firestore/cloud_firestore.dart';
-          import 'package:firebase_auth/firebase_auth.dart';
-          import 'package:flutter/material.dart';
-
-          import '../services/data.dart';
-          import '../services/notifier.dart';
-
-          class ChatScreen extends StatefulWidget {
-            final String friendId;
-            final String friendName;
-            const ChatScreen(
-                {super.key, required this.friendId, required this.friendName});
-
-            @override
-            State<ChatScreen> createState() => _ChatScreenState();
-          }
-
-          class _ChatScreenState extends State<ChatScreen> {
-            final _input = TextEditingController();
-            late final String _me = FirebaseAuth.instance.currentUser!.uid;
-            late final String _chatId = chatIdOf(_me, widget.friendId);
-            bool _ready = false;
-            String? _error;
-            bool _sending = false;
-
-            @override
-            void initState() {
-              super.initState();
-              Notifier.instance.openChatId = _chatId;
-              _open();
-            }
-
-            Future<void> _open() async {
-              try {
-                final ref = db.collection('chats').doc(_chatId);
-                final snap = await ref.get();
-                final members = [_me, widget.friendId]..sort();
-                if (!snap.exists) {
-                  await ref.set({
-                    'members': members,
-                    'createdAt': FieldValue.serverTimestamp(),
-                  });
-                } else {
-                  final old = List<String>.from(snap.data()?['members'] ?? const []);
-                  if (!old.contains(_me) || !old.contains(widget.friendId)) {
-                    throw StateError('Chat membership could not be verified.');
-                  }
-                }
-                if (mounted) setState(() => _ready = true);
-              } catch (e) {
-                if (mounted) {
-                  setState(() => _error = e is StateError ? e.message : errorText(e));
-                }
-              }
-            }
-
-            @override
-            void dispose() {
-              if (Notifier.instance.openChatId == _chatId) {
-                Notifier.instance.openChatId = null;
-              }
-              _input.dispose();
-              super.dispose();
-            }
-
-            Future<void> _send() async {
-              var text = _input.text.trim();
-              if (text.isEmpty) return;
-              if (text.length > 2000) text = text.substring(0, 2000);
-              setState(() => _sending = true);
-              try {
-                await db.collection('chats').doc(_chatId).collection('messages').add({
-                  'senderId': _me,
-                  'text': text,
-                  'createdAt': FieldValue.serverTimestamp(),
-                });
-                _input.clear();
-              } catch (e) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context)
-                      .showSnackBar(SnackBar(content: Text(errorText(e))));
-                }
-              } finally {
-                if (mounted) setState(() => _sending = false);
-              }
-            }
-
-            @override
-            Widget build(BuildContext context) {
-              return Scaffold(
-                appBar: AppBar(
-                  backgroundColor: const Color(0xFF100C1D),
-                  title: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(widget.friendName, style: const TextStyle(fontSize: 17)),
-                      const Text('Private conversation',
-                          style: TextStyle(fontSize: 12, color: Color(0xFFAFA3C3))),
-                    ],
-                  ),
-                ),
-                body: Column(
-                  children: [
-                    Expanded(child: _body()),
-                    SafeArea(
-                      top: false,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: _input,
-                                maxLength: 2000,
-                                maxLines: 4,
-                                minLines: 1,
-                                buildCounter: (_,
-                                        {required currentLength,
-                                        required isFocused,
-                                        maxLength}) =>
-                                    null,
-                                decoration:
-                                    const InputDecoration(hintText: 'Write a message...'),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton.filled(
-                              onPressed: (_ready && !_sending) ? _send : null,
-                              icon: const Icon(Icons.send),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }
-
-            Widget _body() {
-              if (_error != null) {
-                return Center(
-                    child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Text(_error!,
-                            style: const TextStyle(color: Color(0xFFFF9DA9)))));
-              }
-              if (!_ready) return const Center(child: CircularProgressIndicator());
-              return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: db
-                    .collection('chats')
-                    .doc(_chatId)
-                    .collection('messages')
-                    .orderBy('createdAt', descending: true)
-                    .snapshots(),
-                builder: (context, snap) {
-                  if (snap.hasError) {
-                    return Center(child: Text(errorText(snap.error!)));
-                  }
-                  if (!snap.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final docs = snap.data!.docs;
-                  if (docs.isEmpty) {
-                    return const Center(
-                        child: Text('No messages yet. Say hello! 👋',
-                            style: TextStyle(color: Color(0xFFAFA3C3))));
-                  }
-                  return ListView.builder(
-                    reverse: true, // newest message at the bottom
-                    padding: const EdgeInsets.all(12),
-                    itemCount: docs.length,
-                    itemBuilder: (context, i) {
-                      final m = docs[i].data();
-                      final mine = m['senderId'] == _me;
-                      final ts = (m['createdAt'] as Timestamp?)?.toDate();
-                      final time = ts == null
-                          ? 'Sending...'
-                          : TimeOfDay.fromDateTime(ts).format(context);
-                      return Align(
-                        alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(vertical: 4),
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-                          constraints: BoxConstraints(
-                              maxWidth: MediaQuery.of(context).size.width * 0.82),
-                          decoration: BoxDecoration(
-                            color: mine
-                                ? const Color(0xFF7044D8)
-                                : const Color(0xFF292039),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text((m['text'] as String?) ?? ''),
-                              const SizedBox(height: 5),
-                              Text(time,
-                                  style: const TextStyle(fontSize: 11, color: Colors.white70)),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                },
-              );
-            }
-          }
-          BARTA_EOF
-          cat > app_src/tools/patch_android.py <<'BARTA_EOF'
-          """Patches the freshly generated Flutter android/ folder for Barta.
-
-          - adds INTERNET + POST_NOTIFICATIONS permissions, sets app label "Barta"
-          - sets minSdk 24
-          - enables core library desugaring (needed by flutter_local_notifications)
-          """
-          import pathlib
-          import re
-          import sys
-
-          android = pathlib.Path("android")
-
-          # ---- manifest -------------------------------------------------------------
-          mf = android / "app/src/main/AndroidManifest.xml"
-          t = mf.read_text()
-          add = ""
-          for p in ("INTERNET", "POST_NOTIFICATIONS"):
-              if f"android.permission.{p}" not in t:
-                  add += f'    <uses-permission android:name="android.permission.{p}"/>\n'
-          t = t.replace("<application", add + "    <application", 1)
-          t = re.sub(r'android:label="[^"]*"', 'android:label="Barta"', t, count=1)
-          mf.write_text(t)
-
-          # ---- gradle ---------------------------------------------------------------
-          kts = android / "app/build.gradle.kts"
-          groovy = android / "app/build.gradle"
-          if kts.exists():
-              g, is_kts = kts, True
-          elif groovy.exists():
-              g, is_kts = groovy, False
-          else:
-              sys.exit("No app/build.gradle(.kts) found")
-
-          s = g.read_text()
-          s, n = re.subn(r"minSdk(Version)?\s*=?\s*flutter\.minSdkVersion", "minSdk = 24", s)
-          if n == 0:
-              print("warning: minSdk line not found, leaving as is")
-
-          flag = ("isCoreLibraryDesugaringEnabled = true" if is_kts
-                  else "coreLibraryDesugaringEnabled true")
-          s, n = re.subn(r"(compileOptions\s*\{)", r"\1\n        " + flag, s, count=1)
-          if n == 0:
-              sys.exit("compileOptions block not found; cannot enable desugaring")
-
-          dep = ('coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")'
-                 if is_kts else
-                 "coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'")
-          s += f"\ndependencies {{\n    {dep}\n}}\n"
-          g.write_text(s)
-          print("Patched", mf, "and", g)
-          BARTA_EOF
+          mkdir -p app_src
+          base64 -d <<'BARTA_B64' | tar xz -C app_src
+          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
+          AA==
+          BARTA_B64
 
       - name: Generate Android scaffold (package com.shadowchat.app)
         run: |
@@ -1073,5 +263,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Barta-Native-APK
+          name: Baarta-Native-APK
           path: app_src/build/app/outputs/flutter-apk/app-release.apk
